@@ -30,9 +30,44 @@ import {
   type TwEscrow,
 } from "../lib/contract.ts";
 import { ensureReady } from "../lib/horizon.ts";
+import { trancheReleasedAt } from "../lib/events.ts";
 import type { Signer } from "../lib/signer.ts";
 import { Modal, QrImage, QrScanner } from "./Qr.tsx";
 import { AsyncButton, useToast } from "./ui.tsx";
+
+// Kod 2: kapora (Kod 1) serbest kaldıktan sonra işverene ne sıklıkla ve ne kadar süre hatırlatma yapılır.
+const KOD2_REMINDER_EVERY_S = 2 * 60;
+const KOD2_TIMEOUT_S = 15 * 60;
+// Saha QR'ının (Kod 1 / gün sonu) ekranda görsel olarak açık kaldığı süre; doldurunca işveren tek
+// tıkla yeniden gösterebilir. Tek kullanımlık garantisi zaten zincirdeki `released` bit maskesinde.
+const QR_DISPLAY_TTL_S = 5 * 60;
+
+/** `at` bir zaman damgasına ulaşınca saniyede bir yeniden render tetikler; yoksa null döner. */
+function useElapsedSeconds(at: Date | null | undefined) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!at) return;
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [at]);
+  return at ? Math.floor((Date.now() - at.getTime()) / 1000) : null;
+}
+
+/** Bir dilimin zincirde ne zaman serbest bırakıldığını okur (event log'undan); bulunamazsa null. */
+function useTrancheTimestamp(jobId: bigint, worker: string, tranche: number, enabled: boolean) {
+  const [at, setAt] = useState<Date | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    trancheReleasedAt(jobId, worker, tranche).then((d) => {
+      if (!cancelled) setAt(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, worker, tranche, enabled]);
+  return enabled ? at : null;
+}
 
 export function Jobs() {
   const { signer, jobsVersion, goTo } = useApp();
@@ -446,6 +481,7 @@ function ClientCodes({ job, signer, run }: { job: Job; signer: Signer; run: Retu
                 </AsyncButton>
               </div>
             )}
+            {isReleased(s, 0) && !isReleased(s, 1) && <Kod2Waiting job={job} worker={s.address} workerName={nameOf(s.address)} />}
             {isReleased(s, 1) && <span className="small muted">✓ Kod 2 onaylandı</span>}
             {left && !isReleased(s, 2) && (
               <div className="callout warn small" role="alert">
@@ -457,7 +493,7 @@ function ClientCodes({ job, signer, run }: { job: Job; signer: Signer; run: Retu
       })}
       {open && openItem && codes && (
         <Modal title={`${TRANCHE_LABELS[open.tranche]} · ${nameOf(openItem.s.address)}`} onClose={() => setOpen(null)}>
-          <QrImage text={encodeQr({ jobId: job.id, tranche: open.tranche, worker: openItem.s.address, code: codes[open.idx * 3 + open.tranche] })} />
+          <ExpiringQr text={encodeQr({ jobId: job.id, tranche: open.tranche, worker: openItem.s.address, code: codes[open.idx * 3 + open.tranche] })} />
           <p className="small muted" style={{ textAlign: "center", margin: 0 }}>
             Okutulunca çalışanın ödenen tutarı {fromUnits(trancheTarget(job, openItem.s, open.tranche))} USDC'ye çıkar.
             <br />
@@ -465,6 +501,67 @@ function ClientCodes({ job, signer, run }: { job: Job; signer: Signer; run: Retu
           </p>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** İşverene Kod 2 için hatırlatma: 2 dk'da bir toast, 15 dk sonunda "cevapsız" rozeti. */
+function Kod2Waiting({ job, worker, workerName }: { job: Job; worker: string; workerName: string }) {
+  const toast = useToast();
+  const at = useTrancheTimestamp(job.id, worker, 0, true);
+  const elapsed = useElapsedSeconds(at);
+  const lastTick = useRef(0);
+
+  useEffect(() => {
+    if (elapsed == null || elapsed >= KOD2_TIMEOUT_S) return;
+    const tick = Math.floor(elapsed / KOD2_REMINDER_EVERY_S);
+    if (tick > lastTick.current) {
+      lastTick.current = tick;
+      if (tick > 0) toast("info", `Hatırlatma: ${workerName} hâlâ iş yerinde mi? Kod 2'yi onayla.`);
+    }
+  }, [elapsed, toast, workerName]);
+
+  if (elapsed == null) return null;
+  if (elapsed >= KOD2_TIMEOUT_S) {
+    return <span className="badge warn">Kod 2 · 15 dk cevapsız, çalışana bildirildi</span>;
+  }
+  const remaining = KOD2_TIMEOUT_S - elapsed;
+  return (
+    <span className="small muted">
+      Kod 2 bekleniyor · {Math.ceil(remaining / 60)} dk içinde cevapsız kalırsa çalışana bilgi verilecek
+    </span>
+  );
+}
+
+/** Kod 1 ve gün sonu QR'ı: 5 dk görsel geçerlilik, dolunca işveren tek tıkla yeniden gösterir.
+ * Tek kullanımlık garantisi zincirdeki `released` bit maskesinde; bu sadece ekranda açık kalma süresi. */
+function ExpiringQr({ text }: { text: string }) {
+  const [expiresAt, setExpiresAt] = useState(() => Date.now() + QR_DISPLAY_TTL_S * 1000);
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const remaining = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+
+  if (remaining <= 0) {
+    return (
+      <div className="callout warn" style={{ textAlign: "center" }}>
+        QR'ın 5 dakikalık gösterim süresi doldu. Çalışan bu sürede okutamadıysa sorun değil, tekrar gösterebilirsin.
+        <div style={{ marginTop: 8 }}>
+          <button className="btn secondary sm" onClick={() => setExpiresAt(Date.now() + QR_DISPLAY_TTL_S * 1000)}>
+            Yeniden göster · 5 dk
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
+  const ss = String(remaining % 60).padStart(2, "0");
+  return (
+    <div className="stack" style={{ alignItems: "center", gap: 8 }}>
+      <QrImage text={text} />
+      <span className="badge">Kalan süre {mm}:{ss}</span>
     </div>
   );
 }
@@ -613,7 +710,10 @@ function WorkerPanel({
         📷 Sıradaki ödeme: <b>{TRANCHE_LABELS[next]}</b> → toplam {fromUnits(trancheTarget(job, me, next))} USDC
       </div>
       {next === 1 && (
-        <div className="small muted">Kod 2 işverenin "hâlâ burada" onayıyla açılır. Gün sonunda işverenin QR'ını okutarak kalan payını alırsın.</div>
+        <>
+          <div className="small muted">Kod 2 işverenin "hâlâ burada" onayıyla açılır. Gün sonunda işverenin QR'ını okutarak kalan payını alırsın.</div>
+          <Kod2TimeoutBanner job={job} worker={me.address} />
+        </>
       )}
       {processing && (
         <div className="callout row" role="status">
@@ -702,6 +802,18 @@ function WorkerPanel({
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** İşveren Kod 2'ye 15 dk içinde cevap vermezse çalışana bilgi verir (bkz. Kod2Waiting, işveren tarafı). */
+function Kod2TimeoutBanner({ job, worker }: { job: Job; worker: string }) {
+  const at = useTrancheTimestamp(job.id, worker, 0, true);
+  const elapsed = useElapsedSeconds(at);
+  if (elapsed == null || elapsed < KOD2_TIMEOUT_S) return null;
+  return (
+    <div className="callout warn small" role="alert">
+      🔔 İşvereniniz Kod 2'ye 15 dakikadır cevap vermedi. Hâlâ sahadaysanız işvereninizle iletişime geçebilirsiniz.
     </div>
   );
 }

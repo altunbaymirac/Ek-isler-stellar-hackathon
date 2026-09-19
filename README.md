@@ -222,6 +222,8 @@ stellar contract deploy --wasm target/wasm32v1-none/release/ek_isler.wasm --sour
 
 - **Sahte konum (mock GPS)**: tarayıcı konumu taklit edilebilir ve takip çalışanın cihazında yapıldığı için çalışan takibi kapatabilir. Bu yüzden konum hiçbir zaman parayı kendiliğinden hareket ettirmez; sadece kanıt ve bildirimdir.
 - **Konum kanıtı tek başına kesin değildir**: tarayıcı GPS'i sahte olabilir. Bu yüzden konum ödemeyi otomatik açmaz, tarafların kabul ettiği hakemin kararına girdi olur. Yol haritasında cihaz doğrulaması ve çoklu tanık var.
+- **Kod 2 hatırlatma/zaman aşımı**: Kod 1 serbest kaldıktan sonra işverene 2 dk'da bir hatırlatma, 15 dk cevapsız kalırsa çalışana bildirim — bunlar zincire yazılmaz, yalnızca ilgili kişinin sayfası açıkken (toast/rozet) görünür; push bildirim altyapısı yok. Zaman referansı `TrancheReleased` event'inin zincirdeki ledger zaman damgasıdır (kontrat bunu kalıcı saklamaz); genel RPC event ufku (~7 gün) dışında kalan çok eski işlerde bu zamanlayıcı sessizce görünmez.
+- **QR 5 dakikalık gösterim süresi** yalnızca ekranda açık kalma kolaylığıdır, kriptografik bir son kullanma tarihi değildir: `claim()` zaman kontrolü yapmaz, tek kullanımlık garantisi zaten `released` bit maskesinde. Süre dolunca işveren aynı QR'ı tek tıkla tekrar gösterebilir; bağlantı sorunuyla okutulamayan bir QR kaybolmaz.
 - Saha kodları işverenin tarayıcısında saklanır; cihaz değişirse QR'lar gösterilemez ama işveren işi yine *İşi kapat* ile tamamlayabilir.
 - Trustless Work her serbest bırakmada %0,3 protokol ücreti keser; çalışana geçen net tutar buna göre biraz düşüktür.
 - Trustless Work escrow'u en fazla 50 milestone alır: iş başına ihaleci + en fazla 16 çalışan.
