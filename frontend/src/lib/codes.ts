@@ -69,6 +69,33 @@ export function decodeQr(text: string): QrPayload | null {
   return { jobId: BigInt(m[1]), tranche: Number(m[2]), worker: m[3], code: m[4].toLowerCase() };
 }
 
+export interface LocationReading {
+  lat: number;
+  lng: number;
+  at: number; // ms
+  salt: string; // hex
+}
+
+/** Ham konum ölçümünün taahhüdü: sha256("enlem,boylam,zaman,tuz"). Tuz, hash'in tahmin edilmesini önler. */
+export async function commitReading(r: Omit<LocationReading, "salt">): Promise<{ reading: LocationReading; hash: Buffer }> {
+  const salt = Buffer.from(randomCode().slice(0, 16)).toString("hex");
+  const reading = { ...r, salt };
+  const hash = await sha256(new TextEncoder().encode(`${r.lat.toFixed(6)},${r.lng.toFixed(6)},${r.at},${salt}`));
+  return { reading, hash };
+}
+
+/** Ham ölçümler zincire değil, yalnızca bu cihaza kaydedilir (anlaşmazlıkta hakeme gösterilebilir). */
+export function saveReading(jobId: bigint, worker: string, reading: LocationReading) {
+  const key = `ekisler.readings.${CONTRACT_ID}.${jobId}.${worker}`;
+  try {
+    const list = JSON.parse(localStorage.getItem(key) ?? "[]") as LocationReading[];
+    list.push(reading);
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    /* depolama yoksa ölçüm sadece zincirdeki hash olarak kalır */
+  }
+}
+
 /** İki koordinat arası mesafe (metre, haversine) */
 export function distanceM(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6_371_000;

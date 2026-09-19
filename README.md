@@ -155,7 +155,7 @@ Depolama: her iş kendi `persistent` kaydında, her erişimde TTL 30 güne uzat�
 
 | | |
 |---|---|
-| Ek İşler kontratı | [`CDJUU6QEXQXKEFNFCV6OOVJ225J5PSYUNNIEZL7MMOZ5R5PWERW34KVQ`](https://stellar.expert/explorer/testnet/contract/CDJUU6QEXQXKEFNFCV6OOVJ225J5PSYUNNIEZL7MMOZ5R5PWERW34KVQ) |
+| Ek İşler kontratı | [`CCIP322CQ64IUILCZDLMQAQKMV4J3BHDOVZC7BH4HT3RB6CISM7ZQBCS`](https://stellar.expert/explorer/testnet/contract/CCIP322CQ64IUILCZDLMQAQKMV4J3BHDOVZC7BH4HT3RB6CISM7ZQBCS) |
 | Trustless Work escrow wasm hash | `3c42a38069af01f4332aba5e5817bf0415070d5f47d184a9c42c5133433af6d0` |
 | Örnek Trustless Work escrow'u | [`CD773WTP…` Escrow Viewer'da](https://viewer.trustlesswork.com/testnet/v1/CD773WTPJE7Y6AWFM7FT43VOW6TL5IGOX3JDVRXAC6PPGSEZ4GJH6TZJ) |
 | Dispute örneği (gelmeyen çalışan) | [`CAAE6JI2…` Escrow Viewer'da](https://viewer.trustlesswork.com/testnet/v1/CAAE6JI2D3LRSGPUGJXJ72MVFD3DVKRXZFCEINUCL7ZR7UCZ52NUSUPB) |

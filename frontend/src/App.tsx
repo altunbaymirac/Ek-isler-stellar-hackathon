@@ -93,7 +93,7 @@ export default function App() {
     try {
       await Promise.all(all.map((s) => ensureReady(s)));
       toast("ok", "Tüm hesaplar testnet XLM ile fonlandı ve USDC trustline açıldı");
-      refreshBalances();
+      await refreshBalances();
     } catch (e) {
       toast("err", friendlyError(e));
     }

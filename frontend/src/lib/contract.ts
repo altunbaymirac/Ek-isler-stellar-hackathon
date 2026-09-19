@@ -35,8 +35,8 @@ export interface Stakeholder {
 
 export interface LocationProof {
   worker: string;
-  lat_e6: bigint;
-  lng_e6: bigint;
+  distance_m: number; // etkinlik noktasına mesafe; ham koordinat zincire yazılmaz
+  reading_hash: Buffer; // ham ölçümün sha256 taahhüdü
   timestamp: bigint;
 }
 
@@ -206,8 +206,9 @@ export const claimTranche = (signer: Signer, id: bigint, tranche: number, codeHe
     code: Buffer.from(codeHex, "hex"),
   });
 
-export const submitLocation = (signer: Signer, id: bigint, lat: number, lng: number) =>
-  invoke<void>(signer, "submit_location", { job_id: id, worker: signer.address, lat_e6: toE6(lat), lng_e6: toE6(lng) });
+/** Zincire yalnızca mesafe ve ham ölçümün hash'i gider; ham ölçüm (tuzla) çalışanın cihazında saklanır. */
+export const submitLocation = (signer: Signer, id: bigint, distanceM: number, readingHash: Buffer) =>
+  invoke<void>(signer, "submit_location", { job_id: id, worker: signer.address, distance_m: distanceM, reading_hash: readingHash });
 
 export const arbiterRelease = (signer: Signer, id: bigint, worker: string, tranche: number) =>
   invoke<bigint>(signer, "arbiter_release", { job_id: id, worker, tranche });

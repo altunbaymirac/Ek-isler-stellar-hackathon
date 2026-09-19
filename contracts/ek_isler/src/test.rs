@@ -236,8 +236,11 @@ fn arbiter_releases_deposit_on_location_proof() {
     let s = setup(&env);
     let id = s.funded_job(1_000_000);
 
-    s.contract.submit_location(&id, &s.w1, &41_033_600, &28_977_100);
-    assert_eq!(s.contract.get_job(&id).locations.len(), 1);
+    let reading: BytesN<32> = env.crypto().sha256(&Bytes::from_array(&env, b"41.0336,28.9771,1000,tuz")).into();
+    s.contract.submit_location(&id, &s.w1, &37, &reading);
+    let proof = s.contract.get_job(&id).locations.get(0).unwrap();
+    assert_eq!(proof.distance_m, 37);
+    assert_eq!(proof.reading_hash, reading);
 
     assert_eq!(s.contract.arbiter_release(&id, &s.w1, &TRANCHE_ARRIVAL), 64_000);
     let signers: std::vec::Vec<Address> = env.auths().into_iter().map(|(a, _)| a).collect();

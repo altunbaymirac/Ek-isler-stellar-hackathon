@@ -9,7 +9,7 @@ import * as anchor from "../src/lib/anchor.ts";
 import * as c from "../src/lib/contract.ts";
 import { ensureReady, getBalances } from "../src/lib/horizon.ts";
 import { keypairSigner } from "../src/lib/signer.ts";
-import { makeCodes } from "../src/lib/codes.ts";
+import { commitReading, distanceM, makeCodes } from "../src/lib/codes.ts";
 
 const log = (...a: unknown[]) => console.log("•", ...a);
 
@@ -96,7 +96,9 @@ const m = await c.claimTranche(w1, id, 1, codes[1 * 3 + 1]);
 log("w1 mesai QR →", c.fromUnits(m.result, 4), "USDC", m.hash);
 
 // w2: işveren varış kodunu vermiyor → konum kanıtı + hakem
-log("w2 konum kanıtı", (await c.submitLocation(w2, id, 41.03395, 28.97725)).hash);
+const loc = await commitReading({ lat: 41.03395, lng: 28.97725, at: Date.now() });
+const meters = Math.round(distanceM(41.03395, 28.97725, 41.0339, 28.9772));
+log(`w2 konum kanıtı (${meters} m, zincirde yalnızca mesafe + hash)`, (await c.submitLocation(w2, id, meters, loc.hash)).hash);
 await ensureReady(arbiter);
 const r = await c.arbiterRelease(arbiter, id, w2.address, 0);
 log("hakem w2 kaporasını açtı →", c.fromUnits(r.result, 4), "USDC", r.hash);

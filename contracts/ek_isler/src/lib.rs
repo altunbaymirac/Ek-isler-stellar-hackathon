@@ -88,10 +88,13 @@ pub struct Stakeholder {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
+/// Konum kanıtı. Gizlilik için ham GPS koordinatı zincire yazılmaz: yalnızca etkinlik noktasına
+/// mesafe ve ham ölçümün (enlem, boylam, zaman, tuz) sha256 taahhüdü tutulur. Ham ölçüm çalışanın
+/// cihazında kalır; anlaşmazlıkta hakeme zincir dışında gösterilip bu hash'le doğrulanabilir.
 pub struct LocationProof {
     pub worker: Address,
-    pub lat_e6: i64,
-    pub lng_e6: i64,
+    pub distance_m: u32,
+    pub reading_hash: BytesN<32>,
     pub timestamp: u64,
 }
 
@@ -180,8 +183,7 @@ pub struct LocationSubmitted {
     pub job_id: u64,
     #[topic]
     pub worker: Address,
-    pub lat_e6: i64,
-    pub lng_e6: i64,
+    pub distance_m: u32,
 }
 
 #[contractevent]
@@ -596,8 +598,14 @@ impl EkIslerContract {
         Ok(amount)
     }
 
-    /// Çalışan, işveren kod vermezse bulunduğu konumu kanıt olarak zincire kaydeder.
-    pub fn submit_location(env: Env, job_id: u64, worker: Address, lat_e6: i64, lng_e6: i64) -> Result<(), Error> {
+    /// Çalışan, işveren kod vermezse etkinlik noktasına mesafesini ve ham ölçümün hash'ini kanıt olarak kaydeder.
+    pub fn submit_location(
+        env: Env,
+        job_id: u64,
+        worker: Address,
+        distance_m: u32,
+        reading_hash: BytesN<32>,
+    ) -> Result<(), Error> {
         worker.require_auth();
 
         let mut job = load_job(&env, job_id)?;
@@ -607,13 +615,13 @@ impl EkIslerContract {
         find(&job, &worker)?;
         job.locations.push_back(LocationProof {
             worker: worker.clone(),
-            lat_e6,
-            lng_e6,
+            distance_m,
+            reading_hash,
             timestamp: env.ledger().timestamp(),
         });
         save_job(&env, &job);
 
-        LocationSubmitted { job_id, worker, lat_e6, lng_e6 }.publish(&env);
+        LocationSubmitted { job_id, worker, distance_m }.publish(&env);
         Ok(())
     }
 
