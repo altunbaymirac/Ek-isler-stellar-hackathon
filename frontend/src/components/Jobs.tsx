@@ -1,6 +1,6 @@
-import { Bell, Check, Circle, Gavel, MapPin, Plus, QrCode, RefreshCw, ScanLine, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Bell, Check, Circle, FileCode2, Gavel, MapPin, Plus, QrCode, RefreshCw, ScanLine, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { twViewer } from "../lib/config.ts";
+import { CONTRACT_ID, expertAccount, twViewer } from "../lib/config.ts";
 import { useApp } from "../app-context.tsx";
 import { requestCameraAccess } from "../lib/camera.ts";
 import { commitReading, decodeQr, distanceM, encodeQr, loadCodes, makeCodes, saveCodes, saveReading, trancheLabel, trancheShort } from "../lib/codes.ts";
@@ -36,7 +36,7 @@ import { invalidateActivity, jobActivity, trancheReleasedAt, type Activity } fro
 import { L, locale } from "../lib/i18n.ts";
 import type { Signer } from "../lib/signer.ts";
 import { Modal, QrImage, QrScanner } from "./Qr.tsx";
-import { AsyncButton, ChainLink, useToast } from "./ui.tsx";
+import { AsyncButton, ContractCallChip, useToast } from "./ui.tsx";
 
 // Kod 2: kapora (Kod 1) serbest kaldıktan sonra işverene ne sıklıkla ve ne kadar süre hatırlatma yapılır.
 const KOD2_REMINDER_EVERY_S = 2 * 60;
@@ -298,11 +298,13 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
             <div key={i} className={`step ${i < currentStep ? "done" : i === currentStep ? "current" : ""}`}>
               <div className="bar" />
               <span>{s.label}</span>
-              {i < currentStep && <ChainLink hash={s.tx} label={L("zincirde", "on-chain")} />}
+              {i < currentStep && <ContractCallChip hash={s.tx} compact />}
             </div>
           ))}
         </div>
       )}
+
+      <ContractStage job={job} last={activity?.at(-1)?.txHash} />
 
       <div className="stake-list">
         {job.stakeholders.map((s) => {
@@ -497,6 +499,60 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
   );
 }
 
+/**
+ * Jüri: "kontratı her aşamada görmek istiyoruz". Her aşamada kontrat adresi, o aşamada çağrılabilen
+ * fonksiyonlar (kimin çağırdığıyla) ve zincirdeki son çağrı gösterilir.
+ */
+function ContractStage({ job, last }: { job: Job; last: string | undefined }) {
+  const W = L("çalışan", "worker");
+  const C = L("işveren", "employer");
+  const A = L("hakem", "arbiter");
+  const ANY = L("herkes", "anyone");
+  const fns: [string, string][] =
+    job.status === JobStatus.PendingApproval
+      ? [["accept_job(job_id, worker)", W]]
+      : job.status === JobStatus.Approved
+        ? [["deposit(job_id, commitments)", C]]
+        : job.status === JobStatus.Funded
+          ? [
+              ["claim(job_id, worker, tranche, code)", W],
+              ["confirm_presence(job_id, worker, present)", C],
+              ["submit_location(job_id, worker, distance_m, hash)", W],
+              ["arbiter_release(job_id, worker, tranche)", A],
+              ["complete_and_split(job_id)", C],
+              ["release_after_deadline(job_id)", ANY],
+            ]
+          : job.status === JobStatus.Closing
+            ? [["continue_close(job_id)", ANY]]
+            : [["get_job(job_id)", L("salt okunur", "read-only")]];
+  return (
+    <div className="contract-stage">
+      <div className="row" style={{ gap: 8 }}>
+        <FileCode2 size={16} />
+        <b>{L("Kontrat · bu aşama", "Contract · this stage")}</b>
+        <a className="mono small" href={expertAccount(CONTRACT_ID)} target="_blank" rel="noreferrer" title={CONTRACT_ID}>
+          EkIsler {CONTRACT_ID.slice(0, 4)}…{CONTRACT_ID.slice(-4)} ↗
+        </a>
+        <span className="muted small">· Soroban · Stellar testnet</span>
+      </div>
+      <div className="fns">
+        {fns.map(([f, who]) => (
+          <span key={f} className="fn">
+            <code>{f}</code>
+            <span className="who">{who}</span>
+          </span>
+        ))}
+      </div>
+      {last && (
+        <div className="row small" style={{ gap: 6 }}>
+          <span className="muted">{L("Son çağrı", "Last call")}:</span>
+          <ContractCallChip hash={last} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** İşin zincirdeki tüm adımları, her biri kendi işlemine linkli */
 function ChainLog({ job, activity }: { job: Job; activity: Activity[] | null }) {
   const { nameOf } = useApp();
@@ -547,8 +603,11 @@ function ChainLog({ job, activity }: { job: Job; activity: Activity[] | null }) 
         {(activity ?? []).map((a, i) => (
           <li key={`${a.txHash}-${i}`}>
             <span className="t">{a.at.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}</span>
-            <span className="d">{describe(a)}</span>
-            <ChainLink hash={a.txHash} />
+            <span className="d">
+              {describe(a)}
+              <br />
+              <ContractCallChip hash={a.txHash} />
+            </span>
           </li>
         ))}
       </ol>

@@ -1,7 +1,8 @@
 import { BriefcaseBusiness, Building2, Camera, Check, CircleAlert, Info, Languages, Scale, Video, Wallet, type LucideIcon } from "lucide-react";
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
-import { expertTx } from "../lib/config.ts";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { CONTRACT_ID, expertTx } from "../lib/config.ts";
 import { L } from "../lib/i18n.ts";
+import { contractCall, type ContractCall } from "../lib/txinfo.ts";
 
 type ToastKind = "info" | "ok" | "err";
 interface Toast {
@@ -109,6 +110,37 @@ export function ChainLink({ hash, label, title }: { hash: string | undefined; la
     <a className="chain-link" href={expertTx(hash)} target="_blank" rel="noreferrer" title={title ?? L("Bu adımın zincirdeki işlemi", "This step's on-chain transaction")}>
       <span className="chain-dot" aria-hidden="true" />
       {label ?? `tx ${hash.slice(0, 6)}`} ↗
+    </a>
+  );
+}
+
+/** Bir işlemin çağırdığı kontrat fonksiyonu: `EkIsler.claim(2, GCSX…, 0, 0x3fa1…)` → işlem linki */
+export function ContractCallChip({ hash, compact }: { hash: string | undefined; compact?: boolean }) {
+  const [call, setCall] = useState<ContractCall | null | undefined>(undefined);
+  useEffect(() => {
+    if (!hash) return;
+    let off = false;
+    contractCall(hash).then((c) => !off && setCall(c));
+    return () => {
+      off = true;
+    };
+  }, [hash]);
+  if (!hash) return null;
+  const name = !call ? "" : call.contract === CONTRACT_ID ? "EkIsler" : "TrustlessWork";
+  return (
+    <a className="call-chip" href={expertTx(hash)} target="_blank" rel="noreferrer" title={call ? `${call.contract} · ${L("zincirdeki işlemi gör", "view the on-chain transaction")}` : undefined}>
+      <span className="chain-dot" aria-hidden="true" />
+      {call === undefined ? (
+        `tx ${hash.slice(0, 6)}…`
+      ) : call === null ? (
+        `tx ${hash.slice(0, 6)}`
+      ) : (
+        <span>
+          <span className="call-contract">{name}.</span>
+          <b>{call.fn}</b>({compact ? (call.args.length ? "…" : "") : call.args.join(", ")})
+        </span>
+      )}{" "}
+      ↗
     </a>
   );
 }

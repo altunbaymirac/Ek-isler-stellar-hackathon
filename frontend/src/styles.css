@@ -340,3 +340,20 @@ a.tranche:hover { text-decoration: none; box-shadow: inset 0 0 0 1px currentColo
 .scanner-frame { position: absolute; inset: 14%; border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 14px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.28); pointer-events: none; }
 .scanner-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: #fff; font-size: 0.88rem; }
 .scanner summary { cursor: pointer; }
+
+/* ================= her aşamada kontrat ================= */
+.contract-stage { margin: 4px 0 16px; padding: 12px 14px; border-radius: 14px; background: var(--ink); color: var(--on-ink); display: flex; flex-direction: column; gap: 10px; }
+.contract-stage a { color: var(--mint); }
+.contract-stage .muted { color: var(--on-ink-muted); }
+.contract-stage > .row > svg { color: var(--mint); }
+.contract-stage .fns { display: flex; flex-wrap: wrap; gap: 6px; }
+.contract-stage .fn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 9px; border-radius: 8px; background: var(--ink-2); border: 1px solid var(--ink-3); font-size: 0.78rem; }
+.contract-stage code { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; color: var(--on-ink); }
+.contract-stage .fn .who { font-size: 0.7rem; font-weight: 600; color: var(--ink); background: var(--mint); padding: 1px 7px; border-radius: 6px; }
+.contract-stage .call-chip { color: var(--mint); }
+.contract-stage .call-contract { color: var(--on-ink-muted); }
+.call-chip { display: inline-flex; align-items: center; gap: 6px; font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 0.74rem; color: var(--ok); word-break: break-all; }
+.call-chip:hover { text-decoration: underline; }
+.call-contract { color: var(--muted); }
+.chainlog li { grid-template-columns: 48px 1fr; }
+.chainlog li .d .call-chip { margin-top: 3px; }
