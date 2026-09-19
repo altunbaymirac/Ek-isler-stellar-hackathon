@@ -84,7 +84,8 @@ export async function login(info: AnchorInfo, signer: Signer): Promise<string> {
     `${info.webAuth}?account=${signer.address}`,
   );
   const tx = TransactionBuilder.fromXDR(ch.transaction, NETWORK_PASSPHRASE);
-  if (tx.source !== info.signingKey) throw new Error("SEP-10 challenge anchor tarafından imzalanmamış");
+  const source = "innerTransaction" in tx ? tx.innerTransaction.source : tx.source;
+  if (source !== info.signingKey) throw new Error("SEP-10 challenge anchor tarafından imzalanmamış");
   const { signedTxXdr } = await signer.signTransaction(ch.transaction, {
     networkPassphrase: NETWORK_PASSPHRASE,
     address: signer.address,

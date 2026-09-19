@@ -6,3 +6,5 @@ dist/
 *.log
 .stellar/
 test_snapshots/
+.claude/
+frontend/.claude/
