@@ -215,7 +215,6 @@ function AppInner() {
 
         <div className="band-grid">
           <div id="roles">
-            <div className="who-label">{L("Demo rolünü seç · aynı tarayıcıda tüm tarafları oynayabilirsin", "Pick a demo role · you can play every party in one browser")}</div>
             <div className="roles" role="radiogroup" aria-label={L("Aktif rol", "Active role")}>
               {roles.map((r) => {
                 const active = activeKey === r.key;
@@ -241,7 +240,6 @@ function AppInner() {
                       )}
                     </span>
                     <span className="name">{roleText(r).label}</span>
-                    <span className="hint">{roleText(r).hint}</span>
                     {r.key.startsWith("c") && (
                       <span
                         className="role-remove"
@@ -264,7 +262,6 @@ function AppInner() {
                     <Plus size={18} />
                   </span>
                   <span className="name">{L("Rol ekle", "Add role")}</span>
-                  <span className="hint">{L("Yeni bir çalışan hesabı (ör. Garson)", "A new worker account (e.g. Waiter)")}</span>
                 </button>
               ) : (
                 <form
@@ -389,10 +386,6 @@ function AppInner() {
             {L("Şu an ", "Viewing as ")}
             <b>{activeRole ? roleText(activeRole).label : L("Cüzdanım", "My wallet")}</b>
             {L(" olarak görüyorsun", "")}
-            <span className="rolebar-hint">
-              {" "}
-              · {activeRole ? roleText(activeRole).hint : L("Kendi cüzdanınla herhangi bir rolü oynayabilirsin", "Your own wallet can play any role")}
-            </span>
           </span>
           <div className="spacer" />
           <span className="rolebar-bal">{balances?.usdc != null ? `${Number(balances.usdc).toFixed(2)} USDC` : ""}</span>

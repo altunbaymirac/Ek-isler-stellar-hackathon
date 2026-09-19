@@ -107,11 +107,11 @@ export function Jobs() {
 
   const visible = (jobs ?? []).filter((j) => !onlyMine || involved(j));
 
-  const steps: [string, string, string, string][] = [
-    ["01", L("Kod 1 · Varış", "Code 1 · Arrival"), L("İhaleci 12 karakterlik kodu elden verir, çalışan yazar. Zincire \"geldi\" yazılır.", "The contractor hands over a 12-character code; the worker types it in and \"arrived\" is written on-chain."), ""],
-    ["02", L("Kod 2 · Yoklama", "Code 2 · Roll call"), L("Çalışma saatinin ortasında 15 dk: ihaleci çalışmayanları işaretler.", "15 minutes in the middle of the shift: the contractor marks anyone not working."), ""],
-    ["03", L("QR · Gün sonu", "QR · End of day"), L("QR okutulur, payın tamamı anında çalışanda.", "The QR is scanned and the full share is paid instantly."), "final"],
-    ["04", L("Konum", "Location"), L("Alandan çıkılırsa ihaleciye bildirim gider.", "If a worker leaves the venue, the contractor is notified."), "dark"],
+  const steps: [string, string][] = [
+    [L("Kod 1 · Varış", "Code 1 · Arrival"), ""],
+    [L("Kod 2 · Gün ortası", "Code 2 · Midday"), ""],
+    [L("QR · Gün sonu", "QR · End of day"), "final"],
+    [L("Konum", "Location"), "dark"],
   ];
 
   return (
@@ -119,19 +119,11 @@ export function Jobs() {
       <section className="hero">
         <span className="eyebrow">Stellar · Soroban · Trustless Work</span>
         <h1>{L("Para aracıda değil, escrow'da.", "The money sits in escrow, not with a middleman.")}</h1>
-        <p>
-          {L(
-            "İşveren ödemeyi baştan kilitler. Kod 1 ve Kod 2 yalnızca kanıt toplar; para tek seferde, gün sonu QR'ında Trustless Work escrow'undan çalışana geçer.",
-            "The employer locks the payment up front. Code 1 and Code 2 only collect proof; the money moves once, at the end-of-day QR, from the Trustless Work escrow to the worker.",
-          )}
-        </p>
       </section>
       <div className="steps4">
-        {steps.map(([n, title, desc, cls]) => (
-          <div key={n} className={`step4 ${cls}`}>
-            <span className="tag">{n}</span>
+        {steps.map(([title, cls]) => (
+          <div key={title} className={`step4 ${cls}`}>
             <span className="title">{title}</span>
-            <span className="desc">{desc}</span>
           </div>
         ))}
       </div>
