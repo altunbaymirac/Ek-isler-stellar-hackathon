@@ -79,8 +79,8 @@ export function CreateJob() {
   if (!StrKey.isValidEd25519PublicKey(arbiterAddr)) problems.push("Hakem adresi geçersiz");
   else if (arbiterAddr === clientAddr || arbiterAddr === signer?.address || stakeholders.some((s) => s.address === arbiterAddr))
     problems.push("Hakem; işveren, ihaleci ya da çalışanlardan biri olamaz");
-  if (!(Number(arrivalPct) > 0 && Number(arrivalPct) <= Number(midPct) && Number(midPct) <= 100))
-    problems.push("Dilimler geçersiz: 0 < kapora ≤ mesai ≤ %100");
+  if (!(Number(arrivalPct) > 0 && Number(arrivalPct) < Number(midPct) && Number(midPct) < 100))
+    problems.push("Dilimler geçersiz: 0 < kapora < mesai < %100 (her dilim ayrı Trustless Work milestone'u)");
   if (!Number.isFinite(Number(venue.lat)) || !Number.isFinite(Number(venue.lng)) || !(Number(venue.radius) > 0))
     problems.push("Etkinlik konumu geçersiz");
 

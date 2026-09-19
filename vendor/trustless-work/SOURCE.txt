@@ -1,0 +1,4 @@
+Trustless Work multi-release escrow (Apache-2.0)
+Kaynak: https://github.com/Trustless-Work/trustlesswork-smart-contract-stellar
+Dal: multi-release-develop (testnet hattı), commit 887182a
+Derleme: stellar contract build (soroban-sdk 26)

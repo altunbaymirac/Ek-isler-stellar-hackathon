@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { twViewer } from "../lib/config.ts";
 import { useApp } from "../app-context.tsx";
 import { decodeQr, distanceM, encodeQr, loadCodes, makeCodes, saveCodes, TRANCHE_LABELS, TRANCHE_SHORT } from "../lib/codes.ts";
 import {
@@ -6,19 +7,24 @@ import {
   arbiterRelease,
   claimTranche,
   completeJob,
+  continueClose,
   depositJob,
   friendlyError,
   fromE6,
   fromUnits,
+  getEscrow,
   JobStatus,
   listJobs,
+  netOfTwFee,
   releaseJob,
+  resolveToClient,
   shareOf,
   STATUS_LABEL,
   submitLocation,
   trancheTarget,
   type Job,
   type Stakeholder,
+  type TwEscrow,
 } from "../lib/contract.ts";
 import { ensureReady } from "../lib/horizon.ts";
 import type { Signer } from "../lib/signer.ts";
@@ -106,6 +112,7 @@ export function Jobs() {
 
 const STEPS = ["İş tanımlandı", "Çalışan onayları", "Escrow · iş sürüyor", "Kapandı"];
 const isReleased = (s: Stakeholder, t: number) => (s.released & (1 << t)) !== 0;
+const isDisputed = (s: Stakeholder, t: number) => (s.disputed & (1 << t)) !== 0;
 
 function useRun(onChange: () => Promise<void>) {
   const toast = useToast();
@@ -199,6 +206,9 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
           📍 Etkinlik noktası · {t.radius_m} m
         </a>
         <span className="badge">⚖️ {nameOf(t.arbiter)}</span>
+        <a className="badge primary" href={twViewer(job.escrow)} target="_blank" rel="noreferrer" title="Para Ek İşler'de değil, bu işin Trustless Work escrow'unda duruyor">
+          🔒 Trustless Work escrow ↗
+        </a>
       </div>
 
       {job.status !== JobStatus.Refunded && (
@@ -230,11 +240,16 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
               <div className="row" style={{ gap: 4 }}>
                 {!contractorRow &&
                   TRANCHE_SHORT.map((l, i) => (
-                    <span key={l} className={`badge ${isReleased(s, i) ? "ok" : ""}`} title={TRANCHE_LABELS[i]}>
-                      {isReleased(s, i) ? "✓ " : ""}
+                    <span
+                      key={l}
+                      className={`badge ${isReleased(s, i) ? "ok" : isDisputed(s, i) ? "err" : ""}`}
+                      title={isDisputed(s, i) ? `${TRANCHE_LABELS[i]}: Trustless Work'te hakemde` : TRANCHE_LABELS[i]}
+                    >
+                      {isReleased(s, i) ? "✓ " : isDisputed(s, i) ? "⚖️ " : ""}
                       {l}
                     </span>
                   ))}
+                {contractorRow && isDisputed(s, 0) && <span className="badge err">⚖️ hakemde</span>}
               </div>
               <div>{s.accepted ? <span className="badge ok">✓ onayladı</span> : <span className="badge warn">bekliyor</span>}</div>
             </div>
@@ -283,11 +298,17 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
         <WorkerPanel job={job} me={myStake} signer={signer} run={run} venue={venue} />
       )}
       {signer && job.status === JobStatus.Funded && isArbiter && <ArbiterPanel job={job} signer={signer} run={run} venue={venue} />}
+      {signer && isArbiter && job.stakeholders.some((s) => s.disputed !== 0) && <DisputePanel job={job} signer={signer} run={run} />}
 
       <div className="job-actions">
         {signer && job.status === JobStatus.Funded && isClient && (
           <AsyncButton className="btn ok" onClick={() => run("İş kapandı, kalan paylar dağıtıldı", () => completeJob(signer, job.id))}>
             İşi kapat · kalan ödemeleri dağıt
+          </AsyncButton>
+        )}
+        {signer && job.status === JobStatus.Closing && (
+          <AsyncButton className="btn" onClick={() => run("Kapanış tamamlandı", () => continueClose(signer, job.id))}>
+            Kapanışa devam et
           </AsyncButton>
         )}
         {signer && job.status === JobStatus.Funded && deadlinePassed && (
@@ -303,7 +324,7 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
         )}
         {job.status === JobStatus.Completed && myStake && (
           <div className="callout ok">
-            Toplam {fromUnits(myStake.paid)} USDC hesabına geçti.{" "}
+            Toplam {fromUnits(netOfTwFee(myStake.paid))} USDC hesabına geçti (Trustless Work %0,3 protokol ücreti düşülerek).{" "}
             <button className="btn ghost sm" onClick={() => goTo("ramp")}>
               TL olarak IBAN'a çek →
             </button>
@@ -534,6 +555,44 @@ function ArbiterPanel({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Hakem: Trustless Work'te dispute'a alınmış milestone'ları (ör. hiç gelmeyen çalışan) işverene iade eder */
+function DisputePanel({ job, signer, run }: { job: Job; signer: Signer; run: ReturnType<typeof useRun> }) {
+  const { nameOf } = useApp();
+  const [escrow, setEscrow] = useState<TwEscrow | null>(null);
+  const load = useCallback(() => getEscrow(job.escrow).then(setEscrow).catch(() => setEscrow(null)), [job.escrow]);
+  useEffect(() => {
+    load();
+  }, [load, job]);
+
+  const open = (escrow?.milestones ?? [])
+    .map((m, index) => ({ m, index }))
+    .filter(({ m }) => m.flags.disputed && !m.flags.resolved && !m.flags.released);
+
+  return (
+    <div className="panel">
+      <div className="panel-title">⚖️ Trustless Work dispute'ları · karar hakemde</div>
+      {!escrow && <div className="small muted">Escrow okunuyor…</div>}
+      {escrow && open.length === 0 && <div className="small muted">Açık dispute yok, hepsi çözüldü.</div>}
+      {open.map(({ m, index }) => (
+        <div key={index} className="row" style={{ justifyContent: "space-between" }}>
+          <span>
+            <b>{nameOf(m.receiver)}</b> · {m.description} · {fromUnits(m.amount)} USDC
+          </span>
+          <AsyncButton
+            className="btn sm"
+            onClick={async () => {
+              await run("Dispute çözüldü, tutar işverene iade edildi", () => resolveToClient(signer, job, index, m.amount));
+              await load();
+            }}
+          >
+            İşverene iade et
+          </AsyncButton>
+        </div>
+      ))}
     </div>
   );
 }

@@ -10,14 +10,16 @@ export const JobStatus = {
   Funded: 2,
   Completed: 3,
   Refunded: 4,
+  Closing: 5,
 } as const;
 
 export const STATUS_LABEL: Record<number, string> = {
   0: "Çalışan onayı bekleniyor",
   1: "Onaylandı · Fonlama bekleniyor",
-  2: "Escrow'da · iş sürüyor",
+  2: "Trustless Work escrow'unda · iş sürüyor",
   3: "Kapandı",
   4: "İptal edildi",
+  5: "Kapanış sürüyor",
 };
 
 export interface Stakeholder {
@@ -26,6 +28,9 @@ export interface Stakeholder {
   accepted: boolean;
   paid: bigint;
   released: number; // dilim bit maskesi
+  disputed: number; // hakeme (Trustless Work dispute) devredilen dilimler
+  first_milestone: number; // Trustless Work escrow'undaki ilk milestone indeksi
+  amounts: bigint[]; // dilim (milestone) tutarları
 }
 
 export interface LocationProof {
@@ -55,8 +60,10 @@ export interface Job {
   terms: JobTerms;
   stakeholders: Stakeholder[];
   status: number;
+  escrow: string; // Trustless Work multi-release escrow kontratı
   commitments: Buffer[];
   locations: LocationProof[];
+  close_mode: number;
 }
 
 const ERRORS: Record<number, string> = {
@@ -70,12 +77,13 @@ const ERRORS: Record<number, string> = {
   8: "Aynı adres iki kez eklenmiş",
   9: "Son tarih gelecekte olmalı",
   10: "Son tarih henüz gelmedi",
-  11: "Dilim oranları geçersiz (0 < kapora ≤ mesai ≤ %100)",
+  11: "Dilim oranları geçersiz (0 < kapora < mesai < %100)",
   12: "Hakem; müşteri, ihaleci ya da çalışanlardan biri olamaz",
   13: "Kod hash'leri eksik",
   14: "Kod geçersiz: bu çalışan ve dilim için üretilmemiş",
   15: "Geçersiz dilim",
   16: "Bu dilim zaten ödendi",
+  17: "Çok fazla çalışan: Trustless Work escrow'u en fazla 50 milestone alır",
 };
 
 export function friendlyError(e: unknown): string {
@@ -204,11 +212,91 @@ export const submitLocation = (signer: Signer, id: bigint, lat: number, lng: num
 export const arbiterRelease = (signer: Signer, id: bigint, worker: string, tranche: number) =>
   invoke<bigint>(signer, "arbiter_release", { job_id: id, worker, tranche });
 
-export const completeJob = (signer: Signer, id: bigint) =>
-  invoke<void>(signer, "complete_and_split", { job_id: id });
+/**
+ * Kapanış Trustless Work milestone'larını parça parça işler (her işlem en fazla 3 milestone):
+ * ilk çağrıdan sonra iş "Kapanış sürüyor" durumundaysa continue_close ile bitirilir.
+ */
+async function closeFully(signer: Signer, id: bigint, method: string) {
+  const first = await invoke<void>(signer, method, { job_id: id });
+  let hash = first.hash;
+  for (let i = 0; i < 20 && (await getJob(id)).status === JobStatus.Closing; i++) {
+    hash = (await invoke<void>(signer, "continue_close", { job_id: id })).hash ?? hash;
+  }
+  return { result: undefined, hash };
+}
 
-export const releaseJob = (signer: Signer, id: bigint) =>
-  invoke<void>(signer, "release_after_deadline", { job_id: id });
+export const completeJob = (signer: Signer, id: bigint) => closeFully(signer, id, "complete_and_split");
+
+export const releaseJob = (signer: Signer, id: bigint) => closeFully(signer, id, "release_after_deadline");
+
+export const continueClose = (signer: Signer, id: bigint) =>
+  invoke<void>(signer, "continue_close", { job_id: id });
+
+// ---- Trustless Work escrow'u ----
+
+export interface TwMilestone {
+  description: string;
+  status: string;
+  evidence: string;
+  amount: bigint;
+  receiver: string;
+  flags: { approved: boolean; disputed: boolean; released: boolean; resolved: boolean };
+}
+
+export interface TwEscrow {
+  engagement_id: string;
+  title: string;
+  roles: { approver: string; service_provider: string; platform: string; release_signer: string; dispute_resolver: string };
+  milestones: TwMilestone[];
+  trustline: { address: string };
+}
+
+const twSpecs = new Map<string, Promise<contract.Spec>>();
+async function twClient(escrow: string, signer?: Signer): Promise<AnyClient> {
+  let spec = twSpecs.get(escrow);
+  if (!spec) {
+    spec = contract.Client.from({ contractId: escrow, networkPassphrase: NETWORK_PASSPHRASE, rpcUrl: RPC_URL }).then((c) => c.spec);
+    twSpecs.set(escrow, spec);
+    spec.catch(() => twSpecs.delete(escrow));
+  }
+  return new contract.Client(await spec, {
+    contractId: escrow,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    rpcUrl: RPC_URL,
+    publicKey: signer?.address,
+    signTransaction: signer?.signTransaction,
+  }) as AnyClient;
+}
+
+export async function getEscrow(escrow: string): Promise<TwEscrow> {
+  const c = await twClient(escrow);
+  return unwrap<TwEscrow>((await c.get_escrow()).result);
+}
+
+let twFeePromise: Promise<string> | null = null;
+/** Trustless Work testnet protokol ücreti adresi (Ek İşler kontratında kayıtlı) */
+export function twFeeAddress() {
+  twFeePromise ??= client()
+    .then((c) => c.tw_config())
+    .then((tx) => (tx.result as [unknown, string])[1]);
+  return twFeePromise;
+}
+
+/** Hakem: Trustless Work'te dispute'taki milestone'u çözer ve tutarı işverene iade eder */
+export async function resolveToClient(signer: Signer, job: Job, milestoneIndex: number, amount: bigint) {
+  const c = await twClient(job.escrow, signer);
+  const tx = await c.resolve_milestone_dispute({
+    dispute_resolver: signer.address,
+    milestone_index: milestoneIndex,
+    trustless_work_address: await twFeeAddress(),
+    distributions: new Map([[job.terms.client, amount]]),
+  });
+  const sent = await tx.signAndSend();
+  return { result: undefined, hash: sent.sendTransactionResponse?.hash ?? sent.getTransactionResponse?.txHash };
+}
+
+/** Trustless Work testnet protokol ücreti: her serbest bırakmada %0,3 */
+export const netOfTwFee = (gross: bigint) => gross - (gross * 30n) / 10_000n;
 
 /** Çalışanın payı (en küçük birim) */
 export const shareOf = (job: Job, s: Stakeholder) => (job.terms.total_amount * BigInt(s.share_bps)) / 10_000n;

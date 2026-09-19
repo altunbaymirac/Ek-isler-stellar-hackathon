@@ -79,6 +79,9 @@ try {
 log("accept w1", (await c.acceptJob(w1, id)).hash);
 log("accept w2", (await c.acceptJob(w2, id)).hash);
 log("deposit + kod hash'leri", (await c.depositJob(client, id, commitments)).hash);
+const escrowId = (await c.getJob(id)).escrow;
+log("Trustless Work escrow:", escrowId, "bakiye:", (await getBalances(escrowId).catch(() => null)) ?? "(kontrat)");
+log("  görüntüleyici:", `https://viewer.trustlesswork.com/testnet/v1/${escrowId}`);
 
 // w1: işveren varış ve mesai QR'larını gösterir
 const a = await c.claimTranche(w1, id, 0, codes[1 * 3 + 0]);
@@ -101,6 +104,8 @@ log("hakem w2 kaporasını açtı →", c.fromUnits(r.result, 4), "USDC", r.hash
 log("complete_and_split", (await c.completeJob(client, id)).hash);
 const job = await c.getJob(id);
 log("durum:", c.STATUS_LABEL[job.status], "· konum kanıtı:", job.locations.length);
+const tw = await c.getEscrow(escrowId);
+log("TW milestone'ları:", tw.milestones.map((m) => `${m.description}:${m.flags.released ? "✓" : "…"}`).join(" "));
 
 for (const s of all) log(s.label, (await getBalances(s.address)).usdc, "USDC");
 
