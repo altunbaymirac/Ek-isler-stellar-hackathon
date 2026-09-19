@@ -15,8 +15,7 @@ function initial(): Lang {
   } catch {
     /* depolama yok */
   }
-  if (typeof navigator !== "undefined" && navigator.language && !navigator.language.toLowerCase().startsWith("tr")) return "en";
-  return "tr";
+  return "en"; // varsayılan İngilizce; TR sağ üstten seçilir ve hatırlanır
 }
 
 let current: Lang = initial();

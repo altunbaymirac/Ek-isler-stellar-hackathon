@@ -68,6 +68,46 @@ export const DEMO_ROLES: DemoRole[] = [
 export const roleText = (r: DemoRole) => (getLang() === "en" ? r.en : r.tr);
 
 const LS_KEY = "ekisler.demo.v1";
+const LS_CUSTOM = "ekisler.roles.v1";
+
+/** Kullanıcının eklediği demo rolleri (ör. "Garson", "Ses teknisyeni"); bu tarayıcıda saklanır */
+export function loadCustomRoles(): DemoRole[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(LS_CUSTOM) ?? "[]") as { key: string; label: string }[];
+    return list.map(customRole);
+  } catch {
+    return [];
+  }
+}
+
+function customRole({ key, label }: { key: string; label: string }): DemoRole {
+  return {
+    key,
+    tr: { label, hint: "Kodu girer, QR ile payını alır" },
+    en: { label, hint: "Enters the code, gets paid by QR" },
+  };
+}
+
+function saveCustomRoles(roles: DemoRole[]) {
+  try {
+    localStorage.setItem(LS_CUSTOM, JSON.stringify(roles.map((r) => ({ key: r.key, label: r.tr.label }))));
+  } catch {
+    /* gizli pencere: rol bu oturumla sınırlı kalır */
+  }
+}
+
+/** Yeni bir demo rolü ekler; hesabı bir sonraki loadDemoSigners'da oluşur */
+export function addCustomRole(label: string): DemoRole {
+  const role = customRole({ key: `c${Date.now().toString(36)}`, label: label.trim() });
+  saveCustomRoles([...loadCustomRoles(), role]);
+  return role;
+}
+
+export function removeCustomRole(key: string) {
+  saveCustomRoles(loadCustomRoles().filter((r) => r.key !== key));
+}
+
+export const allRoles = () => [...DEMO_ROLES, ...loadCustomRoles()];
 
 export function loadDemoSigners(): Record<string, Signer> {
   let secrets: Record<string, string> = {};
@@ -78,7 +118,7 @@ export function loadDemoSigners(): Record<string, Signer> {
   }
   let changed = false;
   const out: Record<string, Signer> = {};
-  for (const r of DEMO_ROLES) {
+  for (const r of allRoles()) {
     let kp: Keypair;
     try {
       kp = Keypair.fromSecret(secrets[r.key]);

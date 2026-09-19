@@ -5,7 +5,7 @@ import { useApp } from "../app-context.tsx";
 import { createJob, friendlyError } from "../lib/contract.ts";
 import { ensureReady } from "../lib/horizon.ts";
 import { L, locale } from "../lib/i18n.ts";
-import { DEMO_ROLES, roleText } from "../lib/wallet.ts";
+import { allRoles, roleText } from "../lib/wallet.ts";
 import { AsyncButton, useToast } from "./ui.tsx";
 
 interface Row {
@@ -58,7 +58,7 @@ export function CreateJob() {
     who === "custom" ? custom.trim() : who === "wallet" ? (wallet?.address ?? "") : (demo[who]?.address ?? "");
 
   const options = [
-    ...DEMO_ROLES.map((r) => ({ key: r.key, label: roleText(r).label })),
+    ...allRoles().map((r) => ({ key: r.key, label: roleText(r).label })),
     ...(wallet ? [{ key: "wallet", label: L("Cüzdanım", "My wallet") }] : []),
     { key: "custom", label: L("Başka adres…", "Other address…") },
   ];

@@ -1,4 +1,4 @@
-import { Check, RefreshCw, Wallet } from "lucide-react";
+import { Check, Plus, RefreshCw, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppCtx, type AppState, type Tab } from "./app-context.tsx";
 import { CreateJob } from "./components/CreateJob.tsx";
@@ -11,7 +11,7 @@ import { friendlyError } from "./lib/contract.ts";
 import { ensureReady, getBalances, type Balances } from "./lib/horizon.ts";
 import { getLang, L, locale, setLang, subscribeLang } from "./lib/i18n.ts";
 import { short, type Signer } from "./lib/signer.ts";
-import { connectWallet, DEMO_ROLES, disconnectWallet, loadDemoSigners, roleText } from "./lib/wallet.ts";
+import { addCustomRole, allRoles, connectWallet, disconnectWallet, loadDemoSigners, removeCustomRole, roleText } from "./lib/wallet.ts";
 
 const LS_ACTIVE = "ekisler.active";
 
@@ -24,7 +24,9 @@ export default function App() {
 function AppInner() {
   const lang = getLang();
   const toast = useToast();
-  const [demo] = useState(loadDemoSigners);
+  const [demo, setDemo] = useState(loadDemoSigners);
+  const [roles, setRoles] = useState(allRoles);
+  const [newRole, setNewRole] = useState<string | null>(null);
   const [wallet, setWallet] = useState<Signer | null>(null);
   const [activeKey, setActiveKey] = useState<string>(() => {
     try {
@@ -73,12 +75,12 @@ function AppInner() {
 
   const nameOf = useCallback(
     (address: string) => {
-      const role = DEMO_ROLES.find((r) => demo[r.key]?.address === address);
+      const role = roles.find((r) => demo[r.key]?.address === address);
       if (role) return roleText(role).label;
       if (wallet?.address === address) return L("Cüzdanım", "My wallet");
       return short(address);
     },
-    [demo, wallet],
+    [demo, wallet, roles],
   );
 
   const ctx: AppState = useMemo(
@@ -110,7 +112,31 @@ function AppInner() {
 
   const needsSetup = balances && (!balances.funded || balances.usdc === null);
 
-  const activeRole = DEMO_ROLES.find((r) => r.key === activeKey);
+  const activeRole = roles.find((r) => r.key === activeKey);
+
+  const createRole = async () => {
+    const label = (newRole ?? "").trim();
+    if (!label) return;
+    const role = addCustomRole(label);
+    const signers = loadDemoSigners();
+    setDemo(signers);
+    setRoles(allRoles());
+    setNewRole(null);
+    selectAccount(role.key);
+    try {
+      await ensureReady(signers[role.key]); // testnet XLM + USDC trustline
+      setBalances(await getBalances(signers[role.key].address));
+      toast("ok", L(`${label} rolü eklendi ve hesabı hazırlandı`, `${label} role added and its account set up`));
+    } catch (e) {
+      toast("err", friendlyError(e));
+    }
+  };
+
+  const deleteRole = (key: string) => {
+    removeCustomRole(key);
+    setRoles(allRoles());
+    if (activeKey === key) selectAccount("contractor");
+  };
 
   // Telefonda roller yana kayar: açılışta seçili rol görünür olsun
   useEffect(() => {
@@ -148,7 +174,7 @@ function AppInner() {
           <div id="roles">
             <div className="who-label">{L("Demo rolünü seç · aynı tarayıcıda tüm tarafları oynayabilirsin", "Pick a demo role · you can play every party in one browser")}</div>
             <div className="roles" role="radiogroup" aria-label={L("Aktif rol", "Active role")}>
-              {DEMO_ROLES.map((r) => {
+              {roles.map((r) => {
                 const active = activeKey === r.key;
                 return (
                   <button
@@ -173,9 +199,49 @@ function AppInner() {
                     </span>
                     <span className="name">{roleText(r).label}</span>
                     <span className="hint">{roleText(r).hint}</span>
+                    {r.key.startsWith("c") && (
+                      <span
+                        className="role-remove"
+                        role="button"
+                        aria-label={L("Rolü kaldır", "Remove role")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteRole(r.key);
+                        }}
+                      >
+                        <X size={13} />
+                      </span>
+                    )}
                   </button>
                 );
               })}
+              {newRole === null ? (
+                <button className="role add" onClick={() => setNewRole("")}>
+                  <span className="role-icon">
+                    <Plus size={18} />
+                  </span>
+                  <span className="name">{L("Rol ekle", "Add role")}</span>
+                  <span className="hint">{L("Yeni bir çalışan hesabı (ör. Garson)", "A new worker account (e.g. Waiter)")}</span>
+                </button>
+              ) : (
+                <form
+                  className="role add editing"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    createRole();
+                  }}
+                >
+                  <input autoFocus maxLength={28} placeholder={L("Rol adı, ör. Garson", "Role name, e.g. Waiter")} value={newRole} onChange={(e) => setNewRole(e.target.value)} />
+                  <span className="row" style={{ gap: 6 }}>
+                    <button className="btn sm" type="submit" disabled={!newRole.trim()}>
+                      {L("Ekle", "Add")}
+                    </button>
+                    <button className="btn ghost sm" type="button" onClick={() => setNewRole(null)}>
+                      {L("Vazgeç", "Cancel")}
+                    </button>
+                  </span>
+                </form>
+              )}
             </div>
             <div className="row" style={{ marginTop: 12 }}>
               <span className="small" style={{ color: "var(--on-ink-muted)" }}>

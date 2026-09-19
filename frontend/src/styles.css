@@ -361,3 +361,15 @@ a.tranche:hover { text-decoration: none; box-shadow: inset 0 0 0 1px currentColo
 /* Kod 1 · elle verilen 12 karakterlik kod */
 .code-big { text-align: center; font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: clamp(1.6rem, 7vw, 2.2rem); font-weight: 700; letter-spacing: 0.12em; margin: 8px 0 4px; padding: 16px; border-radius: 14px; background: var(--ink); color: var(--mint); }
 .code-input { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* rol ekleme */
+.role { position: relative; }
+.role.add { border-style: dashed; background: transparent; color: var(--on-ink-muted); }
+.role.add:hover { color: var(--on-ink); }
+.role.add.editing { cursor: default; gap: 8px; justify-content: center; }
+.role.add.editing input { width: 100%; padding: 7px 10px; font-size: 0.85rem; background: var(--ink); color: var(--on-ink); border-color: var(--ink-3); }
+.role-remove { position: absolute; right: 8px; bottom: 8px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--on-ink-muted); }
+.role-remove:hover { background: rgba(255, 255, 255, 0.1); color: var(--on-ink); }
+.role.active .role-remove { color: var(--muted); }
+.roles { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+@media (max-width: 560px) { .role.add { flex: 0 0 150px; } }

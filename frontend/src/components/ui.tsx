@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, Building2, Camera, Check, CircleAlert, Info, Languages, Scale, Video, Wallet, type LucideIcon } from "lucide-react";
+import { BriefcaseBusiness, Building2, Camera, Check, CircleAlert, Info, Languages, Scale, UserRound, Video, Wallet, type LucideIcon } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { CONTRACT_ID, expertTx } from "../lib/config.ts";
 import { L } from "../lib/i18n.ts";
@@ -99,7 +99,7 @@ const ROLE_ICONS: Record<string, LucideIcon> = {
 
 /** Rol simgesi (emoji yerine çizgi ikon) */
 export function RoleIcon({ role, size = 18 }: { role: string | undefined; size?: number }) {
-  const I = (role && ROLE_ICONS[role]) || Wallet;
+  const I = (role && ROLE_ICONS[role]) || (role ? UserRound : Wallet);
   return <I size={size} strokeWidth={1.9} aria-hidden="true" />;
 }
 
