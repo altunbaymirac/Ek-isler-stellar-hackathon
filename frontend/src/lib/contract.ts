@@ -29,7 +29,7 @@ export interface Stakeholder {
   paid: bigint;
   released: number; // dilim bit maskesi
   disputed: number; // hakeme (Trustless Work dispute) devredilen dilimler
-  first_milestone: number; // Trustless Work escrow'undaki ilk milestone indeksi
+  escrow: string; // bu paydaşın Trustless Work escrow'u (milestone i = dilim i)
   amounts: bigint[]; // dilim (milestone) tutarları
 }
 
@@ -70,7 +70,6 @@ export interface Job {
   terms: JobTerms;
   stakeholders: Stakeholder[];
   status: number;
-  escrow: string; // Trustless Work multi-release escrow kontratı
   commitments: Buffer[];
   locations: LocationProof[];
   alerts: Alert[];
@@ -94,7 +93,7 @@ const ERRORS: Record<number, string> = {
   14: "Kod geçersiz: bu çalışan ve dilim için üretilmemiş",
   15: "Geçersiz dilim",
   16: "Bu dilim zaten ödendi",
-  17: "Çok fazla çalışan: Trustless Work escrow'u en fazla 50 milestone alır",
+  17: "Bir işte en fazla 5 paydaş olabilir (ihaleci + 4 çalışan)",
 };
 
 export function friendlyError(e: unknown): string {
@@ -150,6 +149,11 @@ async function invoke<T>(signer: Signer, method: string, args: object): Promise<
   const tx = await c[method](args);
   const sent = await tx.signAndSend();
   const hash = sent.sendTransactionResponse?.hash ?? sent.getTransactionResponse?.txHash;
+  const status = sent.getTransactionResponse?.status;
+  if (status && status !== "SUCCESS") {
+    const diag = (sent.getTransactionResponse as { diagnosticEventsXdr?: unknown[] } | undefined)?.diagnosticEventsXdr;
+    throw new Error(`İşlem ağda başarısız oldu (${status})${hash ? ` · tx ${hash}` : ""}${diag ? ` · ${diag.length} tanı olayı` : ""}`);
+  }
   return { result: unwrap<T>(sent.result), hash };
 }
 
@@ -299,8 +303,8 @@ export function twFeeAddress() {
 }
 
 /** Hakem: Trustless Work'te dispute'taki milestone'u çözer ve tutarı işverene iade eder */
-export async function resolveToClient(signer: Signer, job: Job, milestoneIndex: number, amount: bigint) {
-  const c = await twClient(job.escrow, signer);
+export async function resolveToClient(signer: Signer, job: Job, escrow: string, milestoneIndex: number, amount: bigint) {
+  const c = await twClient(escrow, signer);
   const tx = await c.resolve_milestone_dispute({
     dispute_resolver: signer.address,
     milestone_index: milestoneIndex,

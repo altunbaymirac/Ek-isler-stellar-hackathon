@@ -8,7 +8,7 @@ Stellar Hackathon Türkiye 2026 · Stellar Testnet · Soroban + **Trustless Work
 
 ## Problem
 
-Hafta sonu e-spor turnuvası, festival, fuar, çeviri işi, sahne kurulumu… Bu işlerde işi alan bir **ihaleci** (taşeron lideri) vardır, o da işi yürütmek için **alt çalışanlar** tutar (ör. Japonca ve İspanyolca tercümanlar).
+Hafta sonu e-spor turnuvası, festival, fuar, çeviri işi, sahne kurulumu… Bu işlerde işi alan bir **ihaleci** (taşeron lideri) vardır, o da işi yürütmek için **alt çalışanlar** tutar (ör. İtalyanca çevirmen, kameraman, fotoğrafçı).
 
 1. **Tahsilat stresi:** İşveren parayı ihaleciye öder; ihaleci çalışanın payını geç ya da eksik yatırır. Çalışan günlerce "param yattı mı?" diye bekler.
 2. **Gizli oran hilesi:** İhaleci çalışanla sözlü olarak %32'de anlaşır, sisteme habersizce %20 yazar.
@@ -17,7 +17,7 @@ Hafta sonu e-spor turnuvası, festival, fuar, çeviri işi, sahne kurulumu… Bu
 
 ## Çözüm
 
-Para hiçbir şirketin hesabına girmez. Her iş için açılan bir **Trustless Work multi-release escrow**'unda kilitlenir; işin kuralları **Ek İşler Soroban kontratında** kodla işletilir:
+Para hiçbir şirketin hesabına girmez. Her paydaş için açılan ayrı bir **Trustless Work multi-release escrow**'unda kilitlenir; işin kuralları **Ek İşler Soroban kontratında** kodla işletilir:
 
 | Kural | Nasıl sağlanıyor |
 |---|---|
@@ -38,34 +38,34 @@ Para hiçbir şirketin hesabına girmez. Her iş için açılan bir **Trustless 
 
 ## Demo akışı (≈4 dk)
 
-Uygulamanın üstünde 5 hazır **demo testnet hesabı** var: Müşteri (işveren), İhaleci, 2 Tercüman ve Hakem. Tek tarayıcıda rolleri değiştirerek tüm akışı gösterebilirsin. **"Cüzdan bağla"** ile Freighter, xBull, Lobstr vb. gerçek bir cüzdanla da herhangi bir rolü oynayabilirsin.
+Uygulamanın üstünde 6 hazır **demo testnet hesabı** var: İşveren, İhaleci, İtalyanca Çevirmen, Kameraman, Fotoğrafçı ve Hakem. Tek tarayıcıda rolleri değiştirerek tüm akışı gösterebilirsin. **"Cüzdan bağla"** ile Freighter, xBull, Lobstr vb. gerçek bir cüzdanla da herhangi bir rolü oynayabilirsin.
 
 1. **Demo hesaplarını hazırla**: Friendbot ile XLM + USDC trustline.
-2. 🏢 **Müşteri → TL ⇄ USDC**: Cüzdanla giriş (SEP-10) → KYC (SEP-12) → 1000 TL için kur (SEP-38) → havale talimatı (SEP-6 deposit-exchange) → *Havaleyi gönder* → ~20 USDC hesaba gelir.
-3. 🧑‍💼 **İhaleci → Yeni iş**: işveren, 20 USDC, paylar %50 / %32 / %18, kapora %20, mesai %50, etkinlik konumu (Grand Pera), hakem → `create_job`.
-4. 🇯🇵 🇪🇸 **Tercümanlar → İşler**: *Payımı ve şartları onayla* (`accept_job`).
-5. 🏢 **Müşteri**: *Parayı kilitle ve saha QR kodlarını oluştur* (`deposit`). Her çalışan için Varış / Mesai / Bitiş QR'ları hazır.
-6. 🇯🇵 **Japonca tercüman**: *Kod 1'i okut* (telefonda kamera; tek cihazlık demoda *Demo: işverenin ekranındaki Kod 1*) → kapora anında hesaba geçer (`claim`). *Konum takibini başlat* (demoda *Demo: alandan çık*).
-7. 🏢 **Müşteri**: alandan çıkış uyarısını görür. **Kod 2**: *Hayır, burada değil* → çalışana bildirim; *Evet, burada* → mesai payı ödenir (`confirm_presence`).
-8. 🇪🇸 **İspanyolca tercüman**: işveren Kod 1'i vermiyor → *Konumumu al* → *Kanıt olarak gönder* (`submit_location`). ⚖️ **Hakem**: etkinliğe 37 m → *Kaporayı serbest bırak* (`arbiter_release`).
-9. 🇯🇵 **Tercüman**: gün sonu QR'ını okutur → kalan pay. 🏢 **Müşteri**: *İşi kapat* (`complete_and_split`) → herkesin kalan payı ödenir.
-10. 🇯🇵 **Tercüman → TL ⇄ USDC**: *Tümü* → *TL olarak çek* (SEP-6 withdraw).
+2. 🏢 **İşveren → TL ⇄ USDC**: Cüzdanla giriş (SEP-10) → KYC (SEP-12) → 1000 TL için kur (SEP-38) → havale talimatı (SEP-6 deposit-exchange) → *Havaleyi gönder* → ~20 USDC hesaba gelir.
+3. 🧑‍💼 **İhaleci → Yeni iş**: işveren, 20 USDC, paylar %40 / %20 / %20 / %20, kapora %20, mesai %50, etkinlik konumu (Grand Pera), hakem → `create_job`.
+4. 🗣️ 🎥 📷 **Çalışanlar → İşler**: *Payımı ve şartları onayla* (`accept_job`).
+5. 🏢 **İşveren**: *Parayı kilitle ve saha QR kodlarını oluştur* (`deposit`). Her çalışan için Varış / Mesai / Bitiş QR'ları hazır.
+6. 🗣️ **İtalyanca çevirmen**: *Kod 1'i okut* (telefonda kamera; tek cihazlık demoda *Demo: işverenin ekranındaki Kod 1*) → kapora anında hesaba geçer (`claim`). *Konum takibini başlat* (demoda *Demo: alandan çık*).
+7. 🏢 **İşveren**: alandan çıkış uyarısını görür. **Kod 2**: *Hayır, burada değil* → çalışana bildirim; *Evet, burada* → mesai payı ödenir (`confirm_presence`).
+8. 🎥 **Kameraman**: işveren Kod 1'i vermiyor → *Konumumu al* → *Kanıt olarak gönder* (`submit_location`). ⚖️ **Hakem**: etkinliğe 37 m → *Kaporayı serbest bırak* (`arbiter_release`).
+9. 🗣️ **Çevirmen**: gün sonu QR'ını okutur → kalan pay. 🏢 **İşveren**: *İşi kapat* (`complete_and_split`) → herkesin kalan payı ödenir.
+10. 🗣️ **Çevirmen → TL ⇄ USDC**: *Tümü* → *TL olarak çek* (SEP-6 withdraw).
 
 ## Mimari
 
 ### Trustless Work entegrasyonu
 
 ```
-İşveren ──fund──▶ Trustless Work multi-release escrow (her iş için bir tane)
-                    milestone 0: ihaleci payı            → alıcı: ihaleci
-                    milestone 1-3: w1 varış/mesai/bitiş  → alıcı: w1
-                    milestone 4-6: w2 varış/mesai/bitiş  → alıcı: w2
+İşveren ──fund──▶ her paydaş için ayrı bir Trustless Work multi-release escrow'u
+                    ihaleci escrow'u:  milestone 0 = ihaleci payı         → alıcı: ihaleci
+                    w1 escrow'u:       milestone 0-2 = varış/mesai/bitiş  → alıcı: w1
+                    w2 escrow'u:       milestone 0-2 = varış/mesai/bitiş  → alıcı: w2
                     roller: approver, service provider, release signer, platform = Ek İşler kontratı
                             dispute resolver = hakem
 Ek İşler kontratı: QR kodu doğrular → change_milestone_status → approve_milestone → release_milestone_funds
 ```
 
-- Escrow kontratı, Trustless Work'ün resmi deposundan ([`trustlesswork-smart-contract-stellar`](https://github.com/Trustless-Work/trustlesswork-smart-contract-stellar), `multi-release-develop`, testnet hattı) derlenir; wasm'ı [`vendor/trustless-work`](vendor/trustless-work) altında. Ek İşler kontratı `create_job` sırasında bu wasm'dan işe özel bir escrow deploy edip `initialize_escrow` çağırır.
+- Escrow kontratı, Trustless Work'ün resmi deposundan ([`trustlesswork-smart-contract-stellar`](https://github.com/Trustless-Work/trustlesswork-smart-contract-stellar), `multi-release-develop`, testnet hattı) derlenir; wasm'ı [`vendor/trustless-work`](vendor/trustless-work) altında. Ek İşler kontratı `create_job` sırasında bu wasm'dan her paydaş için ayrı bir escrow deploy edip `initialize_escrow` çağırır.
 - Escrow'lar Trustless Work'ün kendi **[Escrow Viewer](https://viewer.trustlesswork.com)**'ında görünür: V1 · Multi-release, roller, milestone'lar ve tüm event'ler.
 - Trustless Work her serbest bırakmada **%0,3 protokol ücreti** keser (testnet'te ücret adresi parametredir, mainnet'te kontrata gömülüdür).
 - Trustless Work her onayda escrow'un tamamını event olarak yayınladığı için kapanış, işlem başına 16 KB event sınırına takılmamak adına en fazla 3 milestone'luk parçalar halinde yapılır (`continue_close`, arayüz otomatik devam ettirir).
@@ -82,7 +82,7 @@ sequenceDiagram
     participant TW as Trustless Work escrow
 
     K->>SC: create_job(paylar, kapora %, mesai %, konum, hakem, son tarih)
-    SC->>TW: deploy + initialize_escrow (milestone / dilim)
+    SC->>TW: her paydaşa bir escrow: deploy + initialize_escrow (dilim = milestone)
     W->>SC: accept_job() — kendi imzasıyla
     C->>A: SEP-10 · SEP-12 · SEP-38 kur · SEP-6 havale
     A-->>C: USDC
@@ -160,7 +160,7 @@ Depolama: her iş kendi `persistent` kaydında, her erişimde TTL 30 güne uzat�
 
 | | |
 |---|---|
-| Ek İşler kontratı | [`CDBJP7A23SWXIPMCPEDKYYI5N6HWDO6Y22CLBW66YLFGGKMRLIOMR2NE`](https://stellar.expert/explorer/testnet/contract/CDBJP7A23SWXIPMCPEDKYYI5N6HWDO6Y22CLBW66YLFGGKMRLIOMR2NE) |
+| Ek İşler kontratı | [`CAR5QVVWGK4FNY3SGUHO7RU3OSRXTS6JQTEDR263CMUBOKOOVNPHB5TK`](https://stellar.expert/explorer/testnet/contract/CAR5QVVWGK4FNY3SGUHO7RU3OSRXTS6JQTEDR263CMUBOKOOVNPHB5TK) |
 | Trustless Work escrow wasm hash | `3c42a38069af01f4332aba5e5817bf0415070d5f47d184a9c42c5133433af6d0` |
 | Örnek Trustless Work escrow'u | [`CD773WTP…` Escrow Viewer'da](https://viewer.trustlesswork.com/testnet/v1/CD773WTPJE7Y6AWFM7FT43VOW6TL5IGOX3JDVRXAC6PPGSEZ4GJH6TZJ) |
 | Dispute örneği (gelmeyen çalışan) | [`CAAE6JI2…` Escrow Viewer'da](https://viewer.trustlesswork.com/testnet/v1/CAAE6JI2D3LRSGPUGJXJ72MVFD3DVKRXZFCEINUCL7ZR7UCZ52NUSUPB) |
@@ -226,7 +226,7 @@ stellar contract deploy --wasm target/wasm32v1-none/release/ek_isler.wasm --sour
 - **QR 5 dakikalık gösterim süresi** yalnızca ekranda açık kalma kolaylığıdır, kriptografik bir son kullanma tarihi değildir: `claim()` zaman kontrolü yapmaz, tek kullanımlık garantisi zaten `released` bit maskesinde. Süre dolunca işveren aynı QR'ı tek tıkla tekrar gösterebilir; bağlantı sorunuyla okutulamayan bir QR kaybolmaz.
 - Saha kodları işverenin tarayıcısında saklanır; cihaz değişirse QR'lar gösterilemez ama işveren işi yine *İşi kapat* ile tamamlayabilir.
 - Trustless Work her serbest bırakmada %0,3 protokol ücreti keser; çalışana geçen net tutar buna göre biraz düşüktür.
-- Trustless Work escrow'u en fazla 50 milestone alır: iş başına ihaleci + en fazla 16 çalışan.
+- Bir işte en fazla 5 paydaş olabilir (ihaleci + 4 çalışan). Trustless Work her onayda escrow'un tamamını event olarak yayınladığı için ilk tasarımdaki tek escrow 3 çalışanda işlem başına 16 KB event sınırını aşıyordu; her paydaşa ayrı escrow verilerek işlem boyutu çalışan sayısından bağımsız hale getirildi.
 - Demo hesaplarının anahtarları **yalnızca testnet** içindir ve tarayıcının `localStorage`'ında durur. Anchor JWT'si sadece bellekte tutulur.
 - Kontrat token adresini ihaleciye bırakıyor; arayüz her zaman testnet USDC kullanıyor. Üretimde token beyaz listesi eklenmeli.
 - Bir çalışan onayladıktan sonra USDC trustline'ını kaldırırsa ona yapılan transfer başarısız olur; arayüz onay adımında trustline'ı otomatik açıyor.

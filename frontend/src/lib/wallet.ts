@@ -59,8 +59,9 @@ export interface DemoRole {
 export const DEMO_ROLES: DemoRole[] = [
   { key: "client", label: "İşveren", emoji: "🏢", hint: "Parayı yatırır, sahada kodları gösterir" },
   { key: "contractor", label: "İhaleci", emoji: "🧑‍💼", hint: "İşi ve çalışan paylarını tanımlar" },
-  { key: "w1", label: "Japonca Tercüman", emoji: "🌏", hint: "Kodları okutur, payını alır" },
-  { key: "w2", label: "İspanyolca Tercüman", emoji: "🌍", hint: "Kodları okutur, payını alır" },
+  { key: "w1", label: "İtalyanca Çevirmen", emoji: "🗣️", hint: "Kodları okutur, payını alır" },
+  { key: "w2", label: "Kameraman", emoji: "🎥", hint: "Kodları okutur, payını alır" },
+  { key: "w3", label: "Fotoğrafçı", emoji: "📷", hint: "Kodları okutur, payını alır" },
   { key: "arbiter", label: "Hakem", emoji: "⚖️", hint: "Anlaşmazlıkta karar verir" },
 ];
 

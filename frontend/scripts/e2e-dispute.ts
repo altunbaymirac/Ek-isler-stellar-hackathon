@@ -44,7 +44,7 @@ await c.acceptJob(w1, id);
 await c.acceptJob(w2, id);
 const { codes, commitments } = await makeCodes(3);
 await c.depositJob(client, id, commitments);
-const escrowId = (await c.getJob(id)).escrow;
+const escrowId = (await c.getJob(id)).stakeholders[2].escrow; // gelmeyecek w2'nin escrow'u
 log(`iş #${id} fonlandı · escrow https://viewer.trustlesswork.com/testnet/v1/${escrowId}`);
 log("w1 varış QR", (await c.claimTranche(w1, id, 0, codes[3])).hash);
 
@@ -61,7 +61,7 @@ const open = escrow.milestones.map((m, i) => ({ m, i })).filter(({ m }) => m.fla
 log("dispute'taki milestone'lar:", open.map(({ m, i }) => `#${i} ${m.description} ${c.fromUnits(m.amount)}`).join(", "));
 
 const before = Number((await getBalances(client.address)).usdc);
-for (const { m, i } of open) log(`hakem #${i} → işverene iade`, (await c.resolveToClient(arbiter, job, i, m.amount)).hash);
+for (const { m, i } of open) log(`hakem #${i} → işverene iade`, (await c.resolveToClient(arbiter, job, escrowId, i, m.amount)).hash);
 const after = Number((await getBalances(client.address)).usdc);
 log(`İşverene iade: +${(after - before).toFixed(4)} USDC`);
 for (const s of [contractor, w1, w2]) log(s.label, (await getBalances(s.address)).usdc);

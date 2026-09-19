@@ -15,10 +15,11 @@ const log = (...a: unknown[]) => console.log("•", ...a);
 
 const client = keypairSigner(Keypair.random(), "Müşteri");
 const contractor = keypairSigner(Keypair.random(), "İhaleci");
-const w1 = keypairSigner(Keypair.random(), "Japonca tercüman");
-const w2 = keypairSigner(Keypair.random(), "İspanyolca tercüman");
+const w1 = keypairSigner(Keypair.random(), "İtalyanca çevirmen");
+const w2 = keypairSigner(Keypair.random(), "Kameraman");
+const w3 = keypairSigner(Keypair.random(), "Fotoğrafçı");
 const arbiter = keypairSigner(Keypair.random(), "Hakem");
-const all = [client, contractor, w1, w2];
+const all = [client, contractor, w1, w2, w3];
 
 log("Hesaplar fonlanıyor + USDC trustline açılıyor…");
 await Promise.all(all.map((s) => ensureReady(s)));
@@ -56,9 +57,10 @@ const created = await c.createJob(contractor, {
   arbiter: arbiter.address,
   totalUsdc: total,
   shares: [
-    { address: contractor.address, share_bps: 5000 },
-    { address: w1.address, share_bps: 3200 },
-    { address: w2.address, share_bps: 1800 },
+    { address: contractor.address, share_bps: 4000 },
+    { address: w1.address, share_bps: 2000 },
+    { address: w2.address, share_bps: 2000 },
+    { address: w3.address, share_bps: 2000 },
   ],
   deadline: new Date(Date.now() + 2 * 24 * 3600 * 1000),
   arrivalPct: 20,
@@ -68,7 +70,7 @@ const created = await c.createJob(contractor, {
 const id = created.result;
 log(`create_job #${id} (${total} USDC)`, created.hash);
 
-const { codes, commitments } = await makeCodes(3);
+const { codes, commitments } = await makeCodes(4);
 try {
   await c.depositJob(client, id, commitments);
   throw new Error("HATA: onaysız deposit geçti!");
@@ -78,9 +80,10 @@ try {
 
 log("accept w1", (await c.acceptJob(w1, id)).hash);
 log("accept w2", (await c.acceptJob(w2, id)).hash);
+log("accept w3", (await c.acceptJob(w3, id)).hash);
 log("deposit + kod hash'leri", (await c.depositJob(client, id, commitments)).hash);
-const escrowId = (await c.getJob(id)).escrow;
-log("Trustless Work escrow:", escrowId, "bakiye:", (await getBalances(escrowId).catch(() => null)) ?? "(kontrat)");
+const escrowId = (await c.getJob(id)).stakeholders[1].escrow; // w1'in escrow'u
+log("w1'in Trustless Work escrow'u:", escrowId, "bakiye:", (await getBalances(escrowId).catch(() => null)) ?? "(kontrat)");
 log("  görüntüleyici:", `https://viewer.trustlesswork.com/testnet/v1/${escrowId}`);
 
 // w1: işveren varış ve mesai QR'larını gösterir
@@ -92,8 +95,8 @@ try {
 } catch (e) {
   log("Başka çalışanın kodu reddedildi ✓", c.friendlyError(e));
 }
-const m = await c.claimTranche(w1, id, 1, codes[1 * 3 + 1]);
-log("w1 mesai QR →", c.fromUnits(m.result, 4), "USDC", m.hash);
+const m = await c.confirmPresence(client, id, w1.address, true);
+log("Kod 2: işveren 'burada' dedi → w1 mesai payı", c.fromUnits(m.result, 4), "USDC", m.hash);
 
 // w2: işveren varış kodunu vermiyor → konum kanıtı + hakem
 const loc = await commitReading({ lat: 41.03395, lng: 28.97725, at: Date.now() });
@@ -103,6 +106,9 @@ await ensureReady(arbiter);
 const r = await c.arbiterRelease(arbiter, id, w2.address, 0);
 log("hakem w2 kaporasını açtı →", c.fromUnits(r.result, 4), "USDC", r.hash);
 
+// En ağır durum: gün sonu QR'ı tek başına 3 milestone'u birden açar (10 milestone'luk escrow)
+const f = await c.claimTranche(w3, id, 2, codes[3 * 3 + 2]);
+log("w3 gün sonu QR (3 milestone birden) →", c.fromUnits(f.result, 4), "USDC", f.hash);
 log("complete_and_split", (await c.completeJob(client, id)).hash);
 const job = await c.getJob(id);
 log("durum:", c.STATUS_LABEL[job.status], "· konum kanıtı:", job.locations.length);

@@ -32,10 +32,11 @@ export function CreateJob() {
   const [clientCustom, setClientCustom] = useState("");
   const [amount, setAmount] = useState("20");
   const [rows, setRows] = useState<Row[]>([
-    { who: "w1", custom: "", percent: "32" },
-    { who: "w2", custom: "", percent: "18" },
+    { who: "w1", custom: "", percent: "20" },
+    { who: "w2", custom: "", percent: "20" },
+    { who: "w3", custom: "", percent: "20" },
   ]);
-  const [contractorPct, setContractorPct] = useState("50");
+  const [contractorPct, setContractorPct] = useState("40");
   const [deadline, setDeadline] = useState(() => toLocalInput(new Date(Date.now() + 24 * 3600 * 1000)));
   const [arbiterWho, setArbiterWho] = useState("arbiter");
   const [arbiterCustom, setArbiterCustom] = useState("");
@@ -75,6 +76,7 @@ export function CreateJob() {
   if (stakeholders.some((s) => !(s.percent > 0))) problems.push("Her pay 0'dan büyük olmalı");
   if (stakeholders.some((s) => !StrKey.isValidEd25519PublicKey(s.address))) problems.push("Geçersiz çalışan adresi var");
   if (new Set(stakeholders.map((s) => s.address)).size !== stakeholders.length) problems.push("Aynı kişi iki kez eklenmiş");
+  if (stakeholders.length > 5) problems.push("Bir işte en fazla 5 paydaş olabilir (ihaleci + 4 çalışan)");
   if (new Date(deadline).getTime() <= Date.now()) problems.push("Son tarih gelecekte olmalı");
   if (!StrKey.isValidEd25519PublicKey(arbiterAddr)) problems.push("Hakem adresi geçersiz");
   else if (arbiterAddr === clientAddr || arbiterAddr === signer?.address || stakeholders.some((s) => s.address === arbiterAddr))

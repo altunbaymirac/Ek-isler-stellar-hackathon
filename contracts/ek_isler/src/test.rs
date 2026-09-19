@@ -109,32 +109,85 @@ impl Setup<'_> {
         }
     }
 
-    fn escrow(&self, id: u64) -> tw::Client<'_> {
-        tw::Client::new(self.env, &self.contract.get_job(&id).escrow)
+    /// Paydaş i'nin Trustless Work escrow'u (0: ihaleci, 1: w1, 2: w2)
+    fn escrow(&self, id: u64, i: u32) -> tw::Client<'_> {
+        tw::Client::new(self.env, &self.contract.get_job(&id).stakeholders.get(i).unwrap().escrow)
+    }
+
+    fn escrow_total(&self, id: u64) -> i128 {
+        self.contract.get_job(&id).stakeholders.iter().map(|st| self.bal(&st.escrow)).sum()
     }
 }
 
 #[test]
-fn creates_trustless_work_escrow_with_milestone_per_tranche() {
+fn creates_one_trustless_work_escrow_per_stakeholder() {
     let env = Env::default();
     let s = setup(&env);
     let id = s.contract.create_job(&s.contractor, &s.terms(1_000_000));
     let job = s.contract.get_job(&id);
-    let e = s.escrow(id).get_escrow();
 
-    // İhaleci 1 + iki çalışan × 3 dilim
-    assert_eq!(e.milestones.len(), 7);
-    assert_eq!(e.roles.approver, s.contract.address);
-    assert_eq!(e.roles.release_signer, s.contract.address);
-    assert_eq!(e.roles.dispute_resolver, s.arbiter);
-    assert_eq!(e.milestones.get(0).unwrap().amount, 500_000);
-    assert_eq!(e.milestones.get(0).unwrap().receiver, s.contractor);
+    // Her paydaşın ayrı escrow'u
+    let a = job.stakeholders.get(0).unwrap().escrow;
+    let b = job.stakeholders.get(1).unwrap().escrow;
+    let c = job.stakeholders.get(2).unwrap().escrow;
+    assert!(a != b && b != c && a != c);
+
+    // İhaleci: tek milestone
+    let e0 = s.escrow(id, 0).get_escrow();
+    assert_eq!(e0.milestones.len(), 1);
+    assert_eq!(e0.milestones.get(0).unwrap().amount, 500_000);
+    assert_eq!(e0.milestones.get(0).unwrap().receiver, s.contractor);
+
     // w1 payı 320.000: 64.000 / 96.000 / 160.000
-    assert_eq!(job.stakeholders.get(1).unwrap().first_milestone, 1);
-    assert_eq!(e.milestones.get(1).unwrap().amount, 64_000);
-    assert_eq!(e.milestones.get(2).unwrap().amount, 96_000);
-    assert_eq!(e.milestones.get(3).unwrap().amount, 160_000);
-    assert_eq!(e.milestones.get(3).unwrap().receiver, s.w1);
+    let e1 = s.escrow(id, 1).get_escrow();
+    assert_eq!(e1.milestones.len(), 3);
+    assert_eq!(e1.roles.approver, s.contract.address);
+    assert_eq!(e1.roles.release_signer, s.contract.address);
+    assert_eq!(e1.roles.dispute_resolver, s.arbiter);
+    assert_eq!(e1.milestones.get(0).unwrap().amount, 64_000);
+    assert_eq!(e1.milestones.get(1).unwrap().amount, 96_000);
+    assert_eq!(e1.milestones.get(2).unwrap().amount, 160_000);
+    assert_eq!(e1.milestones.get(2).unwrap().receiver, s.w1);
+}
+
+#[test]
+fn max_team_final_qr_stays_within_network_limits() {
+    // Tek escrow'lu tasarımda 3+ çalışanda gün sonu QR'ı event sınırını aşıyordu; üst sınır: ihaleci + 4 çalışan
+    let env = Env::default();
+    let s = setup(&env);
+    let workers: std::vec::Vec<Address> = (0..4).map(|_| Address::generate(&env)).collect();
+    let mut t = s.terms(1_000_000);
+    t.shares = vec![&env, ShareInput { address: s.contractor.clone(), share_bps: 2000 }];
+    for w in workers.iter() {
+        t.shares.push_back(ShareInput { address: w.clone(), share_bps: 2000 });
+    }
+    // Gerçek ağda her işlemin kendi bütçesi var: her adımdan önce varsayılan bütçeye dön
+    let b = || env.cost_estimate().budget().reset_default();
+    b();
+    let id = s.contract.create_job(&s.contractor, &t);
+    for w in workers.iter() {
+        b();
+        s.contract.accept_job(&id, w);
+    }
+    let mut commitments = Vec::new(&env);
+    for i in 0..5u32 {
+        for tr in 0..TRANCHES {
+            commitments.push_back(env.crypto().sha256(&s.code(i, tr)).into());
+        }
+    }
+    b();
+    s.contract.deposit(&id, &commitments);
+    // Son çalışan gün sonu QR'ını okutur: 3 milestone tek işlemde
+    b();
+    assert_eq!(s.contract.claim(&id, &workers[3], &TRANCHE_FINAL, &s.code(4, 2)), 200_000);
+    b();
+    s.contract.complete_and_split(&id);
+    while s.contract.get_job(&id).status == JobStatus::Closing {
+        b();
+        s.contract.continue_close(&id);
+    }
+    assert_eq!(s.escrow_total(id), 0);
+    assert_eq!(s.bal(&workers[0]), net(40_000) + net(60_000) + net(100_000));
 }
 
 #[test]
@@ -149,8 +202,7 @@ fn happy_path_pays_everyone_through_trustless_work() {
     assert_eq!(s.contract.get_job(&id).status, JobStatus::Approved);
 
     s.contract.deposit(&id, &s.commitments());
-    let escrow_addr = s.contract.get_job(&id).escrow;
-    assert_eq!(s.bal(&escrow_addr), 1_000_000);
+    assert_eq!(s.escrow_total(id), 1_000_000);
     assert_eq!(s.bal(&s.contract.address), 0); // para Ek İşler'de değil, Trustless Work escrow'unda
 
     s.contract.complete_and_split(&id);
@@ -159,7 +211,7 @@ fn happy_path_pays_everyone_through_trustless_work() {
     assert_eq!(s.bal(&s.w1), net(64_000) + net(96_000) + net(160_000));
     assert_eq!(s.bal(&s.w2), net(36_000) + net(54_000) + net(90_000));
     assert_eq!(s.bal(&s.tw_fee), 3_000);
-    assert_eq!(s.bal(&escrow_addr), 0);
+    assert_eq!(s.escrow_total(id), 0);
     assert_eq!(s.contract.get_job(&id).status, JobStatus::Completed);
 }
 
@@ -171,7 +223,7 @@ fn qr_codes_release_milestones_progressively() {
 
     assert_eq!(s.contract.claim(&id, &s.w1, &TRANCHE_ARRIVAL, &s.code(1, 0)), 64_000);
     assert_eq!(s.bal(&s.w1), net(64_000));
-    assert!(s.escrow(id).get_escrow().milestones.get(1).unwrap().flags.released);
+    assert!(s.escrow(id, 1).get_escrow().milestones.get(0).unwrap().flags.released);
 
     assert_eq!(s.contract.claim(&id, &s.w1, &TRANCHE_MID, &s.code(1, 1)), 96_000);
     assert_eq!(s.contract.claim(&id, &s.w1, &TRANCHE_FINAL, &s.code(1, 2)), 160_000);
@@ -308,18 +360,18 @@ fn deadline_pays_those_who_showed_up_and_disputes_no_shows() {
     assert_eq!(s.bal(&s.contractor), net(500_000));
 
     // w2'nin milestone'ları Trustless Work'te dispute'ta; hakem işverene iade eder
-    let escrow = s.escrow(id);
+    let escrow = s.escrow(id, 2);
     let e = escrow.get_escrow();
-    for i in 4..7u32 {
+    for i in 0..3u32 {
         assert!(e.milestones.get(i).unwrap().flags.disputed);
     }
     let client_before = s.bal(&s.client);
-    for i in 4..7u32 {
+    for i in 0..3u32 {
         let amount = e.milestones.get(i).unwrap().amount;
         escrow.resolve_milestone_dispute(&s.arbiter, &i, &s.tw_fee, &map![&env, (s.client.clone(), amount)]);
     }
     assert!(s.bal(&s.client) - client_before > 179_000);
-    assert_eq!(s.bal(&s.contract.get_job(&id).escrow), 0);
+    assert_eq!(s.escrow_total(id), 0);
 }
 
 #[test]
@@ -336,10 +388,10 @@ fn refund_keeps_released_tranches_with_worker() {
     s.finish(id);
 
     assert_eq!(s.bal(&s.w1), net(64_000) + net(96_000));
-    let e = s.escrow(id).get_escrow();
-    assert!(e.milestones.get(0).unwrap().flags.disputed); // ihaleci payı
-    assert!(!e.milestones.get(1).unwrap().flags.disputed); // ödenmiş kapora
-    assert!(e.milestones.get(3).unwrap().flags.disputed); // w1 bitiş
+    assert!(s.escrow(id, 0).get_escrow().milestones.get(0).unwrap().flags.disputed); // ihaleci payı
+    let e1 = s.escrow(id, 1).get_escrow();
+    assert!(!e1.milestones.get(0).unwrap().flags.disputed); // ödenmiş kapora
+    assert!(e1.milestones.get(2).unwrap().flags.disputed); // w1 bitiş
     assert_eq!(s.contract.get_job(&id).status, JobStatus::Refunded);
 }
 
@@ -386,6 +438,18 @@ fn rejects_invalid_jobs() {
 }
 
 #[test]
+fn rejects_more_than_five_stakeholders() {
+    let env = Env::default();
+    let s = setup(&env);
+    let mut t = s.terms(1_000_000);
+    t.shares = vec![&env, ShareInput { address: s.contractor.clone(), share_bps: 5000 }];
+    for _ in 0..5 {
+        t.shares.push_back(ShareInput { address: Address::generate(&env), share_bps: 1000 });
+    }
+    assert_eq!(s.contract.try_create_job(&s.contractor, &t), Err(Ok(Error::TooManyMilestones)));
+}
+
+#[test]
 fn stranger_cannot_accept() {
     let env = Env::default();
     let s = setup(&env);
@@ -399,11 +463,12 @@ fn rounding_remainder_goes_to_contractor_milestone() {
     let env = Env::default();
     let s = setup(&env);
     let id = s.contract.create_job(&s.contractor, &s.terms(1_000_001));
-    let e = s.escrow(id).get_escrow();
-    assert_eq!(e.milestones.get(0).unwrap().amount, 500_001);
+    assert_eq!(s.escrow(id, 0).get_escrow().milestones.get(0).unwrap().amount, 500_001);
     let mut sum = 0;
-    for m in e.milestones.iter() {
-        sum += m.amount;
+    for i in 0..3u32 {
+        for m in s.escrow(id, i).get_escrow().milestones.iter() {
+            sum += m.amount;
+        }
     }
     assert_eq!(sum, 1_000_001);
 }
@@ -428,4 +493,5 @@ fn cannot_complete_twice() {
         Err(Ok(Error::InvalidStatus))
     );
 }
+
 

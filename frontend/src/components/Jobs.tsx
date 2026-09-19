@@ -261,9 +261,9 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
           konum ({t.radius_m} m)
         </a>{" "}
         ·{" "}
-        <a href={twViewer(job.escrow)} target="_blank" rel="noreferrer" title="Para Ek İşler'de değil, bu işin Trustless Work escrow'unda duruyor">
-          Trustless Work escrow ↗
-        </a>
+        <span title="Para Ek İşler'de değil; her paydaşın payı kendi Trustless Work escrow'unda duruyor">
+          her paydaşın ayrı Trustless Work escrow'u
+        </span>
       </div>
 
       {job.status !== JobStatus.Refunded && (
@@ -287,6 +287,9 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
                 <div className="who">
                   {nameOf(s.address)}
                   {contractorRow && <span className="muted small" style={{ fontWeight: 500 }}> · ihaleci</span>}
+                  <a className="small" style={{ fontWeight: 500, marginLeft: 8 }} href={twViewer(s.escrow)} target="_blank" rel="noreferrer" title="Bu paydaşın Trustless Work escrow'u">
+                    escrow ↗
+                  </a>
                 </div>
                 <div className="paybar" aria-label={`Ödenen ${fromUnits(s.paid)} / ${fromUnits(shareOf(job, s))} USDC`}>
                   <span style={{ width: `${Math.min(100, Number((s.paid * 100n) / (shareOf(job, s) || 1n)))}%` }} />
@@ -876,29 +879,39 @@ function ArbiterPanel({
 /** Hakem: Trustless Work'te dispute'a alınmış milestone'ları (ör. hiç gelmeyen çalışan) işverene iade eder */
 function DisputePanel({ job, signer, run }: { job: Job; signer: Signer; run: ReturnType<typeof useRun> }) {
   const { nameOf } = useApp();
-  const [escrow, setEscrow] = useState<TwEscrow | null>(null);
-  const load = useCallback(() => getEscrow(job.escrow).then(setEscrow).catch(() => setEscrow(null)), [job.escrow]);
+  const escrows = job.stakeholders.filter((s) => s.disputed !== 0).map((s) => s.escrow);
+  const key = escrows.join(",");
+  const [data, setData] = useState<{ escrow: string; e: TwEscrow }[] | null>(null);
+  const load = useCallback(
+    () =>
+      Promise.all(key.split(",").filter(Boolean).map(async (escrow) => ({ escrow, e: await getEscrow(escrow) })))
+        .then(setData)
+        .catch(() => setData(null)),
+    [key],
+  );
   useEffect(() => {
     load();
   }, [load, job]);
 
-  const open = (escrow?.milestones ?? [])
-    .map((m, index) => ({ m, index }))
-    .filter(({ m }) => m.flags.disputed && !m.flags.resolved && !m.flags.released);
+  const open = (data ?? []).flatMap(({ escrow, e }) =>
+    e.milestones
+      .map((m, index) => ({ escrow, m, index }))
+      .filter(({ m }) => m.flags.disputed && !m.flags.resolved && !m.flags.released),
+  );
   const label = (d: string) => ({ varis: "Kod 1 · Varış", mesai: "Kod 2 · Devam", bitis: "Gün sonu", ihaleci: "İhaleci payı" })[d] ?? d;
   const total = open.reduce((a, { m }) => a + m.amount, 0n);
 
   return (
     <div className="panel">
       <div className="panel-title">⚖️ Trustless Work dispute'ları · karar hakemde</div>
-      {!escrow && <div className="small muted">Escrow okunuyor…</div>}
-      {escrow && open.length === 0 && <div className="small muted">Açık dispute yok, hepsi çözüldü.</div>}
+      {!data && <div className="small muted">Escrow'lar okunuyor…</div>}
+      {data && open.length === 0 && <div className="small muted">Açık dispute yok, hepsi çözüldü.</div>}
       {open.length > 1 && (
         <AsyncButton
           className="btn"
           onClick={async () => {
-            for (const { m, index } of open) {
-              if (!(await run(`${label(m.description)} işverene iade edildi`, () => resolveToClient(signer, job, index, m.amount)))) break;
+            for (const { escrow, m, index } of open) {
+              if (!(await run(`${label(m.description)} işverene iade edildi`, () => resolveToClient(signer, job, escrow, index, m.amount)))) break;
             }
             await load();
           }}
@@ -906,15 +919,15 @@ function DisputePanel({ job, signer, run }: { job: Job; signer: Signer; run: Ret
           Tümünü işverene iade et · {fromUnits(total)} USDC
         </AsyncButton>
       )}
-      {open.map(({ m, index }) => (
-        <div key={index} className="row" style={{ justifyContent: "space-between" }}>
+      {open.map(({ escrow, m, index }) => (
+        <div key={`${escrow}-${index}`} className="row" style={{ justifyContent: "space-between" }}>
           <span>
             <b>{nameOf(m.receiver)}</b> · {label(m.description)} · {fromUnits(m.amount)} USDC
           </span>
           <AsyncButton
             className="btn sm"
             onClick={async () => {
-              await run("Dispute çözüldü, tutar işverene iade edildi", () => resolveToClient(signer, job, index, m.amount));
+              await run("Dispute çözüldü, tutar işverene iade edildi", () => resolveToClient(signer, job, escrow, index, m.amount));
               await load();
             }}
           >

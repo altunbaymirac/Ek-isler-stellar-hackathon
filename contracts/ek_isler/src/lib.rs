@@ -1,7 +1,7 @@
 #![no_std]
 //! Ek İşler: çalışan onaylı, sahada QR ile ilerleyen ödeme paylaşımı.
 //!
-//! Para Ek İşler kontratında değil, her iş için açılan bir **Trustless Work multi-release escrow**'unda durur.
+//! Para Ek İşler kontratında değil, her paydaş için açılan bir **Trustless Work multi-release escrow**'unda durur.
 //! Her çalışanın Varış / Mesai / Bitiş dilimi Trustless Work'te ayrı bir milestone'dur (alıcısı çalışanın kendisi).
 //! Ek İşler kontratı escrow'da approver, service provider, release signer ve platform rolündedir:
 //! işin kurallarını (çalışan mutabakatı, QR kod doğrulaması, hakem kararı, son tarih) uygular ve
@@ -56,9 +56,12 @@ pub const CLOSE_COMPLETE: u32 = 1; // İşveren kapattı: herkese öde
 pub const CLOSE_DEADLINE: u32 = 2; // Son tarih: gelenlere öde, gelmeyenleri hakeme devret
 pub const CLOSE_REFUND: u32 = 3; // Karşılıklı iptal: açılmamışları hakeme devret
 
-/// Trustless Work her onayda escrow'un tamamını event olarak yayınlar; işlem başına 16 KB event
+/// Trustless Work her onayda escrow'un tamamını event olarak yayınlar. Her paydaşın ayrı (en fazla
+/// 3 milestone'luk) escrow'u olduğu için event'ler küçük kalır; yine de işlem başına 16 KB event
 /// sınırını aşmamak için kapanışta işlem başına en fazla bu kadar milestone işlenir.
 const CLOSE_BATCH: u32 = 3;
+/// create_job her paydaş için bir escrow deploy eder; işlem kaynak sınırları için üst limit.
+const MAX_STAKEHOLDERS: u32 = 5;
 
 /// Ödeme dilimleri: çalışan her dilimi işverenin QR koduyla (ya da hakem kararıyla) açar.
 pub const TRANCHE_ARRIVAL: u32 = 0; // Varış: kapora
@@ -81,7 +84,7 @@ pub struct Stakeholder {
     pub accepted: bool,   // Çalışanın mutabakat onayı
     pub paid: i128,       // Serbest bırakılan milestone tutarlarının toplamı (Trustless Work ücreti öncesi)
     pub released: u32,    // Açılmış dilimlerin bit maskesi
-    pub first_milestone: u32, // Trustless Work escrow'undaki ilk milestone indeksi
+    pub escrow: Address,      // Bu paydaşın Trustless Work escrow'u (milestone i = dilim i)
     pub amounts: Vec<i128>,   // Dilim (milestone) tutarları
     pub disputed: u32,        // Hakeme (Trustless Work dispute) devredilen dilimlerin bit maskesi
 }
@@ -136,8 +139,6 @@ pub struct Job {
     pub terms: JobTerms,
     pub stakeholders: Vec<Stakeholder>,
     pub status: JobStatus,
-    /// Bu işin Trustless Work multi-release escrow kontratı
-    pub escrow: Address,
     /// İşverenin deposit sırasında verdiği kod hash'leri: paydaş i, dilim t → [i * 3 + t]
     pub commitments: Vec<BytesN<32>>,
     pub locations: Vec<LocationProof>,
@@ -160,7 +161,7 @@ pub struct JobCreated {
     #[topic]
     pub job_id: u64,
     pub contractor: Address,
-    pub escrow: Address,
+    pub escrows: u32,
 }
 
 #[contractevent]
@@ -235,7 +236,6 @@ pub struct JobClosed {
 const DAY_IN_LEDGERS: u32 = 17_280;
 const TTL_THRESHOLD: u32 = 7 * DAY_IN_LEDGERS;
 const TTL_EXTEND_TO: u32 = 30 * DAY_IN_LEDGERS;
-const MAX_MILESTONES: u32 = 50;
 
 fn bump_instance(env: &Env) {
     env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
@@ -331,13 +331,13 @@ fn release_up_to(env: &Env, job: &mut Job, idx: u32, tranche: u32, by_arbiter: b
     let mut amount: i128 = 0;
     for t in 0..=tranche {
         if s.released & (1 << t) == 0 {
-            indices.push_back(s.first_milestone + t);
+            indices.push_back(t);
             amount += s.amounts.get(t).unwrap();
             s.released |= 1 << t;
         }
     }
     let evidence = if by_arbiter { "hakem" } else { "qr" };
-    tw_release(env, &tw::Client::new(env, &job.escrow), &indices, evidence);
+    tw_release(env, &tw::Client::new(env, &s.escrow), &indices, evidence);
     s.paid += amount;
     job.stakeholders.set(idx, s.clone());
     TrancheReleased { job_id: job.id, worker: s.address, tranche, amount, by_arbiter }.publish(env);
@@ -347,10 +347,7 @@ fn release_up_to(env: &Env, job: &mut Job, idx: u32, tranche: u32, by_arbiter: b
 /// Kapanışın bir parçasını işler: en fazla CLOSE_BATCH açık milestone'u ya serbest bırakır ya da
 /// Trustless Work'te dispute'a alır (hakem çözer, ör. işverene iade). Bittiyse işi kapatır.
 fn process_close(env: &Env, job: &mut Job) {
-    let escrow = tw::Client::new(env, &job.escrow);
     let me = this(env);
-    let mut to_release: Vec<u32> = Vec::new(env);
-    let mut to_dispute: Vec<u32> = Vec::new(env);
     let mut picked: u32 = 0;
     let mut remaining = false;
 
@@ -361,7 +358,8 @@ fn process_close(env: &Env, job: &mut Job) {
             CLOSE_DEADLINE => is_contractor(job, &s) || s.released & (1 << TRANCHE_ARRIVAL) != 0,
             _ => false,
         };
-        let mut changed = false;
+        let mut to_release: Vec<u32> = Vec::new(env);
+        let mut to_dispute: Vec<u32> = Vec::new(env);
         for t in 0..s.amounts.len() {
             if (s.released | s.disputed) & (1 << t) != 0 {
                 continue;
@@ -371,27 +369,26 @@ fn process_close(env: &Env, job: &mut Job) {
                 break;
             }
             picked += 1;
-            changed = true;
             if pay {
-                to_release.push_back(s.first_milestone + t);
+                to_release.push_back(t);
                 s.paid += s.amounts.get(t).unwrap();
                 s.released |= 1 << t;
             } else {
-                to_dispute.push_back(s.first_milestone + t);
+                to_dispute.push_back(t);
                 s.disputed |= 1 << t;
             }
         }
-        if changed {
+        if !to_release.is_empty() || !to_dispute.is_empty() {
+            let escrow = tw::Client::new(env, &s.escrow);
+            tw_release(env, &escrow, &to_release, "kapanis");
+            for index in to_dispute.iter() {
+                escrow.dispute_milestone(&index, &me);
+            }
             job.stakeholders.set(i, s);
         }
         if remaining {
             break;
         }
-    }
-
-    tw_release(env, &escrow, &to_release, "kapanis");
-    for index in to_dispute.iter() {
-        escrow.dispute_milestone(&index, &me);
     }
 
     if !remaining {
@@ -426,7 +423,7 @@ impl EkIslerContract {
         env.storage().instance().set(&DataKey::TwFeeAddress, &tw_fee_address);
     }
 
-    /// 1. İhaleci işi tanımlar; kontrat bu iş için bir Trustless Work escrow'u açar.
+    /// 1. İhaleci işi tanımlar; kontrat her paydaş için ayrı bir Trustless Work escrow'u açar.
     /// Çalışanların onayı her zaman false başlar; sadece ihalecinin kendi payı onaylı sayılır.
     pub fn create_job(env: Env, contractor: Address, terms: JobTerms) -> Result<u64, Error> {
         contractor.require_auth();
@@ -443,6 +440,9 @@ impl EkIslerContract {
         }
         if terms.shares.is_empty() {
             return Err(Error::InvalidShares);
+        }
+        if terms.shares.len() > MAX_STAKEHOLDERS {
+            return Err(Error::TooManyMilestones);
         }
         if terms.arbiter == terms.client || terms.arbiter == contractor || terms.client == contractor {
             return Err(Error::InvalidArbiter);
@@ -474,8 +474,9 @@ impl EkIslerContract {
         let dust = terms.total_amount - shares_sum;
         let job_id: u64 = env.storage().instance().get(&DataKey::JobCount).unwrap_or(0) + 1;
 
+        let me = this(&env);
+        let wasm: BytesN<32> = env.storage().instance().get(&DataKey::TwWasm).unwrap();
         let mut stakeholders: Vec<Stakeholder> = Vec::new(&env);
-        let mut milestones: Vec<tw::Milestone> = Vec::new(&env);
         let mut all_accepted = true;
         for (i, s) in terms.shares.iter().enumerate() {
             for existing in stakeholders.iter() {
@@ -487,7 +488,7 @@ impl EkIslerContract {
             // İhaleci listede yoksa yuvarlama artığı ilk paydaşa eklenir
             let row_dust = if contractor_row || (!has_contractor && i == 0) { dust } else { 0 };
             let amounts = tranche_amounts(&env, &terms, s.share_bps, contractor_row, row_dust);
-            let first = milestones.len();
+            let mut milestones: Vec<tw::Milestone> = Vec::new(&env);
             for (t, amount) in amounts.clone().iter().enumerate() {
                 if amount <= 0 {
                     return Err(Error::InvalidAmount);
@@ -502,6 +503,31 @@ impl EkIslerContract {
                     receiver: s.address.clone(),
                 });
             }
+
+            // Bu paydaşın Trustless Work escrow'u: kurallar bu kontratta, para Trustless Work'te
+            let mut salt_src = Bytes::new(&env);
+            salt_src.extend_from_array(&job_id.to_be_bytes());
+            salt_src.extend_from_array(&(i as u32).to_be_bytes());
+            let salt: BytesN<32> = env.crypto().sha256(&salt_src).into();
+            #[allow(deprecated)]
+            let escrow_addr = env.deployer().with_current_contract(salt).deploy_v2(wasm.clone(), ());
+            tw::Client::new(&env, &escrow_addr).initialize_escrow(&tw::Escrow {
+                engagement_id: String::from_str(&env, "ekisler"),
+                title: String::from_str(&env, "Ek Isler"),
+                description: String::from_str(&env, ""),
+                roles: tw::Roles {
+                    approver: me.clone(),
+                    service_provider: me.clone(),
+                    release_signer: me.clone(),
+                    platform: me.clone(),
+                    dispute_resolver: terms.arbiter.clone(),
+                },
+                platform_fee: 0,
+                milestones,
+                trustline: tw::Trustline { address: terms.token.clone() },
+                receiver_memo: 0,
+            });
+
             let accepted = contractor_row;
             if !accepted {
                 all_accepted = false;
@@ -512,42 +538,14 @@ impl EkIslerContract {
                 accepted,
                 paid: 0,
                 released: 0,
-                first_milestone: first,
+                escrow: escrow_addr,
                 amounts,
                 disputed: 0,
             });
         }
-        if milestones.len() > MAX_MILESTONES {
-            return Err(Error::TooManyMilestones);
-        }
-
-        // Trustless Work escrow'unu aç: kurallar bu kontratta, para Trustless Work'te
-        let me = this(&env);
-        let wasm: BytesN<32> = env.storage().instance().get(&DataKey::TwWasm).unwrap();
-        let mut salt_src = Bytes::new(&env);
-        salt_src.extend_from_array(&job_id.to_be_bytes());
-        let salt: BytesN<32> = env.crypto().sha256(&salt_src).into();
-        #[allow(deprecated)]
-        let escrow_addr = env.deployer().with_current_contract(salt).deploy_v2(wasm, ());
-        tw::Client::new(&env, &escrow_addr).initialize_escrow(&tw::Escrow {
-            engagement_id: String::from_str(&env, "ekisler"),
-            title: String::from_str(&env, "Ek Isler"),
-            description: String::from_str(&env, ""),
-            roles: tw::Roles {
-                approver: me.clone(),
-                service_provider: me.clone(),
-                release_signer: me.clone(),
-                platform: me.clone(),
-                dispute_resolver: terms.arbiter.clone(),
-            },
-            platform_fee: 0,
-            milestones,
-            trustline: tw::Trustline { address: terms.token.clone() },
-            receiver_memo: 0,
-        });
 
         env.storage().instance().set(&DataKey::JobCount, &job_id);
-        JobCreated { job_id, contractor: contractor.clone(), escrow: escrow_addr.clone() }.publish(&env);
+        JobCreated { job_id, contractor: contractor.clone(), escrows: stakeholders.len() }.publish(&env);
 
         let job = Job {
             id: job_id,
@@ -555,7 +553,6 @@ impl EkIslerContract {
             terms,
             stakeholders,
             status: if all_accepted { JobStatus::Approved } else { JobStatus::PendingApproval },
-            escrow: escrow_addr,
             commitments: Vec::new(&env),
             locations: Vec::new(&env),
             alerts: Vec::new(&env),
@@ -601,8 +598,15 @@ impl EkIslerContract {
             return Err(Error::InvalidCommitments);
         }
 
-        let escrow = tw::Client::new(&env, &job.escrow);
-        escrow.fund_escrow(&job.terms.client, &escrow.get_escrow(), &job.terms.total_amount);
+        // Her paydaşın escrow'u kendi payı kadar fonlanır
+        for s in job.stakeholders.iter() {
+            let escrow = tw::Client::new(&env, &s.escrow);
+            let mut amount: i128 = 0;
+            for a in s.amounts.iter() {
+                amount += a;
+            }
+            escrow.fund_escrow(&job.terms.client, &escrow.get_escrow(), &amount);
+        }
 
         job.status = JobStatus::Funded;
         job.commitments = commitments;
