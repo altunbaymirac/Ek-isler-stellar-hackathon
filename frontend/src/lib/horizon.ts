@@ -1,5 +1,6 @@
 import { BASE_FEE, Horizon, Memo, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 import { FRIENDBOT_URL, HORIZON_URL, NETWORK_PASSPHRASE, USDC, USDC_ISSUER } from "./config.ts";
+import { L } from "./i18n.ts";
 import { signXdr, type Signer } from "./signer.ts";
 
 export const horizon = new Horizon.Server(HORIZON_URL);
@@ -30,7 +31,7 @@ export async function getBalances(address: string): Promise<Balances> {
 
 export async function fundWithFriendbot(address: string) {
   const r = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(address)}`);
-  if (!r.ok && r.status !== 400) throw new Error(`Friendbot hatası: HTTP ${r.status}`);
+  if (!r.ok && r.status !== 400) throw new Error(L(`Friendbot hatası: HTTP ${r.status}`, `Friendbot error: HTTP ${r.status}`));
 }
 
 /** Hesap yoksa fonlar, USDC trustline yoksa açar. Workers dahil herkes USDC alabilmek için buna ihtiyaç duyar. */

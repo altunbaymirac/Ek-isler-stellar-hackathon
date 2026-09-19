@@ -2,6 +2,7 @@ import { Buffer } from "buffer";
 import { Memo, TransactionBuilder } from "@stellar/stellar-sdk";
 import { ANCHOR_URL, NETWORK_PASSPHRASE, USDC_ISSUER } from "./config.ts";
 import { payUsdc } from "./horizon.ts";
+import { L } from "./i18n.ts";
 import type { Signer } from "./signer.ts";
 
 /**
@@ -66,7 +67,7 @@ export async function discover(): Promise<AnchorInfo> {
   const toml = await (await fetch(`${ANCHOR_URL}/.well-known/stellar.toml`)).text();
   const get = (k: string) => {
     const v = tomlValue(toml, k);
-    if (!v) throw new Error(`stellar.toml içinde ${k} yok`);
+    if (!v) throw new Error(L(`Anchor'ın stellar.toml dosyasında ${k} yok`, `${k} is missing from the anchor's stellar.toml`));
     return v;
   };
   return {
@@ -85,7 +86,8 @@ export async function login(info: AnchorInfo, signer: Signer): Promise<string> {
   );
   const tx = TransactionBuilder.fromXDR(ch.transaction, NETWORK_PASSPHRASE);
   const source = "innerTransaction" in tx ? tx.innerTransaction.source : tx.source;
-  if (source !== info.signingKey) throw new Error("SEP-10 challenge anchor tarafından imzalanmamış");
+  if (source !== info.signingKey)
+    throw new Error(L("SEP-10 challenge'ı anchor tarafından imzalanmamış", "The SEP-10 challenge was not signed by the anchor"));
   const { signedTxXdr } = await signer.signTransaction(ch.transaction, {
     networkPassphrase: NETWORK_PASSPHRASE,
     address: signer.address,
@@ -209,13 +211,21 @@ export async function pollTx(
   onStatus?: (t: AnchorTx) => void,
   tries = 48,
 ): Promise<AnchorTx> {
+  let last = "";
   for (let i = 0; i < tries; i++) {
     const t = await getTx(info, token, id);
+    last = t.status;
     onStatus?.(t);
     if (["completed", "error", "refunded", "expired"].includes(t.status)) return t;
     await new Promise((r) => setTimeout(r, 2500));
   }
-  throw new Error("Anchor işlemi zaman aşımına uğradı");
+  // Havale kaydedildi ama anchor ödemeyi göndermedi: kendi hatamızla karışmasın diye durumu da yaz.
+  throw new Error(
+    L(
+      `Anchor işlemi ${Math.round((tries * 2500) / 1000)} sn içinde tamamlanmadı (son durum: ${last}). Anchor şu an ödeme göndermiyor olabilir.`,
+      `The anchor did not finish the transaction within ${Math.round((tries * 2500) / 1000)} s (last status: ${last}). The anchor may not be paying out right now.`,
+    ),
+  );
 }
 
 export function listTxs(info: AnchorInfo, token: string) {

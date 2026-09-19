@@ -143,7 +143,10 @@ function AppInner() {
           await anchor.ensureKyc(info, token, client.address);
           const dep = await anchor.startDeposit(info, token, client.address, "1000");
           await anchor.simulateBankTransfer(info, dep.id, "1000");
-          const t = await anchor.pollTx(info, token, dep.id);
+          // Anchor'ın durumu satırda görünsün: takılırsa (ör. pending_anchor) bekleyiş sessiz kalmasın
+          const t = await anchor.pollTx(info, token, dep.id, (s) =>
+            setSetupMsg(L(`İşverene test USDC'si yükleniyor · anchor durumu: ${s.status}`, `Loading test USDC to the employer · anchor status: ${s.status}`)),
+          );
           if (t.status !== "completed") throw new Error(`${L("Anchor işlemi", "Anchor transaction")}: ${t.status}`);
           toast("ok", L(`İşverene ${Number(t.amount_out).toFixed(2)} USDC yüklendi (SEP-6)`, `${Number(t.amount_out).toFixed(2)} USDC loaded to the employer (SEP-6)`), t.stellar_transaction_id);
         } catch (e) {
