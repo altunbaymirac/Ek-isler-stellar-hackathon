@@ -246,7 +246,7 @@ function AppInner() {
                       )}
                     </span>
                     <span className="name">{roleText(r).label}</span>
-                    {r.key.startsWith("c") && (
+                    {r.custom && (
                       <span
                         className="role-remove"
                         role="button"

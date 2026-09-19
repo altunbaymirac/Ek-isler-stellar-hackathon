@@ -54,6 +54,8 @@ export interface DemoRole {
   key: string;
   tr: { label: string; hint: string };
   en: { label: string; hint: string };
+  /** Kullanıcının kendi eklediği rol mü? Yalnızca bunlar silinebilir. */
+  custom?: boolean;
 }
 
 export const DEMO_ROLES: DemoRole[] = [
@@ -84,6 +86,7 @@ function customRole({ key, label }: { key: string; label: string }): DemoRole {
     key,
     tr: { label, hint: "Kodu girer, QR ile payını alır" },
     en: { label, hint: "Enters the code, gets paid by QR" },
+    custom: true,
   };
 }
 

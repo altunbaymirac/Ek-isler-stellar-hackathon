@@ -61,6 +61,12 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
   const [deviceId, setDeviceId] = useState<string | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
   const [pasted, setPasted] = useState("");
+  // Okunan son QR: aynı kare saniyede 60 kez okunmasın. Kod kabul edilmezse (başka işe ait, başka
+  // çalışan için) tarama durmaz; çalışan pencereyi kapatmadan doğru QR'ı okutabilir.
+  const seen = useRef<{ text: string; at: number } | null>(null);
+  // facingMode ile açıldığında hangi kameranın seçildiğini bilmiyoruz; "kamera değiştir" doğru
+  // kameradan devam etsin diye akışın kendi deviceId'sini okuyoruz.
+  const activeId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -76,6 +82,7 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
 
         stream = await openCamera({ deviceId });
         if (done) return stopStream(stream);
+        activeId.current = stream.getVideoTracks()[0]?.getSettings().deviceId ?? deviceId;
 
         const v = video.current!;
         v.srcObject = stream;
@@ -95,9 +102,9 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
           ctx.drawImage(v, 0, 0, c.width, c.height);
           const img = ctx.getImageData(0, 0, c.width, c.height);
           const found = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
-          if (found?.data) {
-            done = true;
-            cancelAnimationFrame(raf);
+          // Aynı QR'ı 4 saniye boyunca tekrar gönderme; kabul edilirse pencere zaten kapanır.
+          if (found?.data && (seen.current?.text !== found.data || Date.now() - seen.current.at > 4000)) {
+            seen.current = { text: found.data, at: Date.now() };
             navigator.vibrate?.(60);
             latest.current(found.data);
           }
@@ -116,7 +123,7 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
   }, [deviceId, attempt]);
 
   const nextCam = () => {
-    const i = cams.findIndex((c) => c.deviceId === deviceId);
+    const i = cams.findIndex((c) => c.deviceId === (deviceId ?? activeId.current));
     setDeviceId(cams[(i + 1) % cams.length]?.deviceId);
   };
 

@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, Building2, Camera, Check, CircleAlert, Info, Languages, Scale, UserRound, Video, Wallet, type LucideIcon } from "lucide-react";
+import { BriefcaseBusiness, Building2, Check, CircleAlert, Info, Languages, Scale, UserRound, Video, Wallet, type LucideIcon } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { CONTRACT_ID, expertTx } from "../lib/config.ts";
 import { L } from "../lib/i18n.ts";
@@ -96,7 +96,6 @@ const ROLE_ICONS: Record<string, LucideIcon> = {
   contractor: BriefcaseBusiness,
   w1: Languages,
   w2: Video,
-  w3: Camera,
   arbiter: Scale,
   wallet: Wallet,
 };
