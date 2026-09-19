@@ -22,13 +22,13 @@ Para hiçbir şirketin hesabına girmez. Her iş için açılan bir **Trustless 
 | Kural | Nasıl sağlanıyor |
 |---|---|
 | Oran hilesi yapılamaz | İhaleci payları yazar, ama **her çalışan kendi payını cüzdan imzasıyla onaylamadan** işveren para yatıramaz. İhaleci onayları dışarıdan dolduramaz. |
-| **Kod 1** · yüz yüze eşleşme | İşveren sahada Kod 1'i (QR) gösterir; çalışan okutunca geldiği kanıtlanır ve kaporası (ör. payın %20'si) anında hesabına geçer. |
-| **Kod 2** · devam kontrolü | İşverene "çalışan hâlâ burada mı?" sorulur. *Evet* → mesai payı (toplam %50) anında ödenir. *Hayır* → zincire uyarı düşer, çalışana bildirim gider; para hareket etmez. |
-| **QR** · gün sonu kanıtı | İş bitince işverenin gün sonu QR'ı okutulur; kalan payın tamamı ödenir. |
-| **Konum** · takip | Kod 1'den gün sonu QR'ına kadar konum **çalışanın cihazında** izlenir. Alandan çıkılırsa yalnızca mesafe zincire yazılır ve işverene bildirim gider. Ham koordinat zincire hiç yazılmaz. |
-| İşveren Kod 1'i vermezse | Çalışan konum kanıtı (mesafe + ham ölçümün hash'i) kaydeder; tarafların baştan kabul ettiği **hakem** kaporayı serbest bırakır. |
+| **Kod 1** · yüz yüze eşleşme | İhaleci sahada çalışana 12 karakterlik kodu (`K7M2-QX9F-4B3T`) **elden** verir; çalışan uygulamasına yazınca işe geldiği zincire yazılır. **Para hareket etmez.** |
+| **Kod 2** · devam kontrolü | İş kurulurken girilen **çalışma saatlerinin tam ortasında** ihaleciye tek bir bildirim gider ve **15 dakika** açık kalır: "çalışanlar iş yerinde ve çalışıyor mu?". İhaleci çalışmayanları işaretler; işaretlenen her çalışana **anında bildirim** düşer: *"İhaleci çalışmadığını söylüyor."* Pencerenin açılma anı ve süresi zincirde yazılıdır, dışında yoklama yapılamaz. **Para hareket etmez.** |
+| **Gün sonu QR'ı** · ödeme | Parayı aktaran tek adım. İş bitince ihaleci QR'ı gösterir, çalışan okutur ve **payının tamamı** anında hesabına geçer. |
+| **Konum** · takip | Kod 1 girildiği anda **kendiliğinden başlar**, gün sonu ödemesinde biter ve konum **çalışanın cihazında** işlenir. Alandan çıkılırsa yalnızca mesafe zincire yazılır ve ihaleciye bildirim gider. Ham koordinat zincire hiç yazılmaz. |
+| İhaleci Kod 1'i vermezse | Çalışan konum kanıtı (mesafe + ham ölçümün hash'i) kaydeder; tarafların baştan kabul ettiği **hakem** çalışanı gelmiş işaretler, böylece son tarih ödemesine dahil olur. |
 | İşveren de mağdur olmaz | İşveren işi kapatmadan son tarih geçerse: işe gelen (kaporası açılmış) çalışanlar kalan paylarını alır, **hiç gelmeyenlerin payı işverene döner**. |
-| Para aracıda değil | Her çalışanın Varış / Mesai / Bitiş dilimi Trustless Work escrow'unda ayrı bir **milestone**'dur ve alıcısı çalışanın kendisidir. Ek İşler kontratı yalnızca koşul sağlanınca milestone'u onaylayıp serbest bıraktırır. |
+| Para aracıda değil | Her paydaşın payı Trustless Work escrow'unda ayrı bir **milestone**'dur ve alıcısı paydaşın kendisidir. Ek İşler kontratı yalnızca koşul sağlanınca milestone'u onaylayıp serbest bıraktırır; para hiçbir an Ek İşler'de durmaz. |
 | Anlaşmazlık | Hiç gelmeyen çalışanın milestone'ları Trustless Work'te **dispute**'a alınır; hakem (dispute resolver) işverene iade eder. |
 | Türk Lirası ile giriş-çıkış | İşveren TL havale eder → anchor USDC'ye çevirir (SEP-38 + SEP-6). Çalışan USDC'yi IBAN'ına TL olarak çeker. |
 
@@ -42,13 +42,13 @@ Uygulamanın üstünde 5 hazır **demo testnet hesabı** var: Müşteri (işvere
 
 1. **Demo hesaplarını hazırla**: Friendbot ile XLM + USDC trustline.
 2. 🏢 **Müşteri → TL ⇄ USDC**: Cüzdanla giriş (SEP-10) → KYC (SEP-12) → 1000 TL için kur (SEP-38) → havale talimatı (SEP-6 deposit-exchange) → *Havaleyi gönder* → ~20 USDC hesaba gelir.
-3. 🧑‍💼 **İhaleci → Yeni iş**: işveren, 20 USDC, paylar %50 / %32 / %18, kapora %20, mesai %50, etkinlik konumu (Grand Pera), hakem → `create_job`.
+3. 🧑‍💼 **İhaleci → Yeni iş**: işveren, 20 USDC, paylar %50 / %32 / %18, **çalışma saatleri** (demoda *2 dk* hazır seçeneği), etkinlik konumu (Grand Pera), hakem → `create_job`. Form, Kod 2 yoklamasının tam olarak ne zaman açılacağını gösterir.
 4. 🇯🇵 🇪🇸 **Tercümanlar → İşler**: *Payımı ve şartları onayla* (`accept_job`).
-5. 🏢 **Müşteri**: *Parayı kilitle ve saha QR kodlarını oluştur* (`deposit`). Her çalışan için Varış / Mesai / Bitiş QR'ları hazır.
-6. 🇯🇵 **Japonca tercüman**: *Kod 1'i okut* (telefonda kamera; tek cihazlık demoda *Demo: işverenin ekranındaki Kod 1*) → kapora anında hesaba geçer (`claim`). *Konum takibini başlat* (demoda *Demo: alandan çık*).
-7. 🏢 **Müşteri**: alandan çıkış uyarısını görür. **Kod 2**: *Hayır, burada değil* → çalışana bildirim; *Evet, burada* → mesai payı ödenir (`confirm_presence`).
-8. 🇪🇸 **İspanyolca tercüman**: işveren Kod 1'i vermiyor → *Konumumu al* → *Kanıt olarak gönder* (`submit_location`). ⚖️ **Hakem**: etkinliğe 37 m → *Kaporayı serbest bırak* (`arbiter_release`).
-9. 🇯🇵 **Tercüman**: gün sonu QR'ını okutur → kalan pay. 🏢 **Müşteri**: *İşi kapat* (`complete_and_split`) → herkesin kalan payı ödenir.
+5. 🏢 **Müşteri**: *Parayı escrow'a kilitle* (`deposit`). 🧑‍💼 **İhaleci**: *Saha kodlarını oluştur* (`set_codes`) → her çalışan için Kod 1 ve gün sonu QR'ı hazır.
+6. 🇯🇵 **Japonca tercüman**: ihaleci *Kod 1'i göster* der, çalışan kodu yazar (`check_in`) → **para hareket etmez**, zincire "geldi" yazılır. Konum takibi kendiliğinden başlar (demoda *Demo: alandan çık*).
+7. 🧑‍💼 **İhaleci**: alandan çıkış uyarısını görür. Çalışma süresinin ortasında **Kod 2 bildirimi** düşer ve 15 dakikalık geri sayım başlar: çalışmayanları işaretleyip gönderir (`confirm_presence_all`). İşaretlenen çalışanın ekranına anında "ihaleci çalışmadığını söylüyor" bildirimi gelir. Para hareket etmez.
+8. 🇪🇸 **İspanyolca tercüman**: ihaleci Kod 1'i vermiyor → *Konumumu al* → *Kanıt olarak gönder* (`submit_location`). ⚖️ **Hakem**: etkinliğe 37 m → *Gelmiş olarak işaretle* (`arbiter_confirm_arrival`).
+9. 🇯🇵 **Tercüman**: iş bitti, ihalecinin *gün sonu QR'ını* okutur (`claim`) → **payının tamamı** anında hesabına geçer. 🏢 **Müşteri**: *İşi kapat* (`complete_and_split`) → kalan paylar ödenir.
 10. 🇯🇵 **Tercüman → TL ⇄ USDC**: *Tümü* → *TL olarak çek* (SEP-6 withdraw).
 
 ## Mimari
@@ -81,25 +81,30 @@ sequenceDiagram
     participant SC as Ek İşler (Soroban)
     participant TW as Trustless Work escrow
 
-    K->>SC: create_job(paylar, kapora %, mesai %, konum, hakem, son tarih)
-    SC->>TW: deploy + initialize_escrow (milestone / dilim)
+    K->>SC: create_job(paylar, konum, hakem, son tarih)
+    SC->>TW: deploy + initialize_escrow (paydaş başına 1 milestone)
     W->>SC: accept_job() — kendi imzasıyla
     C->>A: SEP-10 · SEP-12 · SEP-38 kur · SEP-6 havale
     A-->>C: USDC
-    C->>SC: deposit(sha256(kodlar))
+    C->>SC: deposit()
     SC->>TW: fund_escrow — USDC Trustless Work'te kilitlenir
+    K->>SC: set_codes(sha256(saha kodları))
 
-    Note over C,W: Sahada
-    C-->>W: Varış QR'ı gösterir
-    W->>SC: claim(varış, kod)
+    Note over K,W: Sahada
+    K-->>W: Kod 1'i elden verir
+    W->>SC: check_in(kod) — geldi kanıtı, ödeme yok
+    Note over K,SC: Çalışma saatlerinin ortası · 15 dk pencere
+    K->>SC: confirm_presence_all(çalışmayanlar) — Kod 2, ödeme yok
+    SC-->>W: "ihaleci çalışmadığını söylüyor" bildirimi
+    Note over W: İş biter
+    K-->>W: Gün sonu QR'ını gösterir
+    W->>SC: claim(giz) → payın tamamı
     SC->>TW: status → approve → release_milestone_funds
-    TW-->>W: kapora (USDC)
-    C-->>W: Mesai QR'ı
-    W->>SC: claim(mesai, kod) → payın %50'si
+    TW-->>W: USDC
 
-    alt İşveren kod vermezse
-        W->>SC: submit_location(enlem, boylam)
-        H->>SC: arbiter_release(çalışan, varış)
+    alt İhaleci Kod 1'i vermezse
+        W->>SC: submit_location(mesafe, hash)
+        H->>SC: arbiter_confirm_arrival(çalışan)
     end
 
     alt İşveren kapatır
@@ -116,8 +121,9 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> PendingApproval: create_job
     PendingApproval --> Approved: son çalışan accept_job
-    Approved --> Funded: deposit (işveren + kod hash'leri)
-    Funded --> Funded: claim / submit_location / arbiter_release
+    Approved --> Funded: deposit (işveren)
+    Funded --> Funded: set_codes / check_in / confirm_presence (ödeme yok)
+    Funded --> Funded: claim / arbiter_release (ödeme) / submit_location
     Funded --> Completed: complete_and_split (işveren)
     Funded --> Completed: release_after_deadline (herkes, son tarih sonrası)
     Funded --> Refunded: refund (işveren + ihaleci)
@@ -140,20 +146,25 @@ stateDiagram-v2
 
 | Fonksiyon | Kim çağırır | Ne yapar |
 |---|---|---|
-| `create_job(contractor, terms) -> u64` | İhaleci | Şartları doğrular ve işe özel **Trustless Work escrow**'unu deploy edip milestone'larla başlatır. Paylar toplamı %100, tekrar eden adres yok, hakem taraflardan biri olamaz. |
+| `create_job(contractor, terms) -> u64` | İhaleci | Şartları doğrular ve işe özel **Trustless Work escrow**'unu deploy edip milestone'larla başlatır. Paylar toplamı %100, tekrar eden adres yok, hakem taraflardan biri olamaz, çalışma saatleri son tarihi geçemez. |
 | `accept_job(job_id, worker)` | Çalışan | Payını ve şartları imzasıyla kabul eder. Son onayla `Approved`. |
-| `deposit(job_id, commitments)` | İşveren | Trustless Work escrow'unu fonlar (`fund_escrow`); her paydaş × dilim için kodun sha256'sını kaydeder. |
-| `claim(job_id, worker, tranche, code) -> i128` | Çalışan | Kodu doğrular; o dilime kadar açılmamış milestone'ları Trustless Work'te onaylayıp serbest bıraktırır. |
-| `confirm_presence(job_id, worker, present)` | İşveren | Kod 2: *burada* → mesai dilimi ödenir; *burada değil* → çalışana uyarı. |
+| `deposit(job_id)` | İşveren | Trustless Work escrow'unu fonlar (`fund_escrow`). |
+| `set_codes(job_id, commitments)` | İhaleci | Her paydaş için Kod 1 ve gün sonu QR gizinin sha256'sını kaydeder. Ödenmemiş paylar için yenilenebilir (ihaleci cihaz değiştirirse). |
+| `check_in(job_id, worker, code)` | Çalışan | **Kod 1**: elden verilen kodu doğrular, çalışanı *gelmiş* işaretler. **Para hareket etmez.** |
+| `claim(job_id, worker, code) -> i128` | Çalışan | **Gün sonu QR'ı**: gizi doğrular ve payın tamamını Trustless Work'ten ödetir. |
+| `confirm_presence_all(job_id, absent)` | İhaleci | **Kod 2**: ihaleciye giden tek bildirimin yanıtı. `absent` listesindekilere "çalışmıyor" uyarısı düşer, kalanlar çalışıyor sayılır. Tek işlemde tüm ekip. **Para hareket etmez.** |
+| `confirm_presence(job_id, worker, present)` | İhaleci | Kod 2'nin tek çalışanlık hâli. Aynı pencere kuralına tabidir. **Para hareket etmez.** |
+| `presence_window(terms) -> (u64, u64)` | Okuma | Yoklamanın açık olduğu aralık: çalışma saatlerinin ortası ve + 15 dakika. |
 | `submit_location(job_id, worker, distance_m, reading_hash)` | Çalışan | Etkinliğe mesafe + ham ölçümün hash'i. Mesafe yarıçapı aşarsa işverene "alandan çıktı" uyarısı. |
-| `arbiter_release(job_id, worker, tranche) -> i128` | Hakem | Kanıta göre bir dilimi açar. |
+| `arbiter_confirm_arrival(job_id, worker)` | Hakem | Konum kanıtına göre çalışanı *gelmiş* işaretler (ödeme değil); son tarih ödemesine dahil eder. |
+| `arbiter_release(job_id, worker) -> i128` | Hakem | Çalışanın payını son tarihi beklemeden serbest bıraktırır. |
 | `complete_and_split(job_id)` | İşveren | Tüm açık milestone'ları serbest bıraktırır (parça parça). |
 | `release_after_deadline(job_id)` | Herkes | Son tarih sonrası: gelenlerin milestone'larını serbest bıraktırır, gelmeyenlerinkini Trustless Work'te dispute'a alır. |
 | `continue_close(job_id)` | Herkes | Parçalara bölünmüş kapanışı sürdürür. |
 | `refund(job_id)` | İşveren **ve** ihaleci | Karşılıklı iptal; açılmış dilimler çalışanda kalır, açılmamışlar dispute'a alınır ve hakem işverene iade eder. |
 | `get_job`, `job_count` | Okuma | Görünüm fonksiyonları. |
 
-Olaylar (`#[contractevent]`): `JobCreated`, `JobAccepted`, `JobFunded`, `TrancheReleased`, `PresenceChecked`, `AlertRaised`, `LocationSubmitted`, `JobClosed`. Hakem, dispute'ları doğrudan Trustless Work escrow'undaki `resolve_milestone_dispute` ile çözer.
+Olaylar (`#[contractevent]`): `JobCreated`, `JobAccepted`, `JobFunded`, `CodesSet`, `CheckedIn`, `PresenceChecked`, `PaymentReleased`, `AlertRaised`, `LocationSubmitted`, `JobClosed`. Hakem, dispute'ları doğrudan Trustless Work escrow'undaki `resolve_milestone_dispute` ile çözer.
 Depolama: her iş kendi `persistent` kaydında, her erişimde TTL 30 güne uzatılır.
 
 ## Testnet
@@ -220,11 +231,11 @@ stellar contract deploy --wasm target/wasm32v1-none/release/ek_isler.wasm --sour
 
 ## Güvenlik notları ve bilinen sınırlar
 
-- **Sahte konum (mock GPS)**: tarayıcı konumu taklit edilebilir ve takip çalışanın cihazında yapıldığı için çalışan takibi kapatabilir. Bu yüzden konum hiçbir zaman parayı kendiliğinden hareket ettirmez; sadece kanıt ve bildirimdir.
-- **Konum kanıtı tek başına kesin değildir**: tarayıcı GPS'i sahte olabilir. Bu yüzden konum ödemeyi otomatik açmaz, tarafların kabul ettiği hakemin kararına girdi olur. Yol haritasında cihaz doğrulaması ve çoklu tanık var.
-- Saha kodları işverenin tarayıcısında saklanır; cihaz değişirse QR'lar gösterilemez ama işveren işi yine *İşi kapat* ile tamamlayabilir.
+- **Konum parayı asla kendiliğinden hareket ettirmez**: tasarım gereği yalnızca bildirim ve hakeme sunulan bir girdidir. Ödemeyi açan tek şey gün sonu QR'ı, hakem kararı ya da son tarih kuralıdır.
+- **İki kod türü bilerek farklı uzunlukta.** Kod taahhütleri (sha256) zincirde herkese açıktır, yani kısa bir kod hash'ten geri bulunabilir. **Kod 1** elle yazıldığı için kısa olmak zorunda: 32 harfli alfabeden 12 karakter (60 bit) — elle yazılabilir ama kaba kuvvetle bulunamaz, karışan harfler (I, L, O, U) alfabede yok. **Gün sonu QR'ı** yalnızca kamerayla okunduğu için kısa olma zorunluluğu yok: 32 baytlık tam rastgele giz (256 bit). Parayı aktaran adımın en güçlü giz olması bilinçli bir tercih. Kod 1 uzunluğu `frontend/src/lib/codes.ts` içindeki `CODE_LENGTH` ile belirlenir.
+- Saha kodları ihalecinin tarayıcısında saklanır; cihaz değişirse ihaleci `set_codes` ile yenilerini üretir, ödenmiş paylar etkilenmez.
 - Trustless Work her serbest bırakmada %0,3 protokol ücreti keser; çalışana geçen net tutar buna göre biraz düşüktür.
-- Trustless Work escrow'u en fazla 50 milestone alır: iş başına ihaleci + en fazla 16 çalışan.
+- Trustless Work escrow'u en fazla 50 milestone alır: iş başına ihaleci + en fazla 24 çalışan.
 - Demo hesaplarının anahtarları **yalnızca testnet** içindir ve tarayıcının `localStorage`'ında durur. Anchor JWT'si sadece bellekte tutulur.
 - Kontrat token adresini ihaleciye bırakıyor; arayüz her zaman testnet USDC kullanıyor. Üretimde token beyaz listesi eklenmeli.
 - Bir çalışan onayladıktan sonra USDC trustline'ını kaldırırsa ona yapılan transfer başarısız olur; arayüz onay adımında trustline'ı otomatik açıyor.

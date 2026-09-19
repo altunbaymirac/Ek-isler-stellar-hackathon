@@ -1,12 +1,16 @@
 #![no_std]
-//! Ek İşler: çalışan onaylı, sahada QR ile ilerleyen ödeme paylaşımı.
+//! Ek İşler: çalışan onaylı, sahada kodla ilerleyen ödeme paylaşımı.
 //!
 //! Para Ek İşler kontratında değil, her iş için açılan bir **Trustless Work multi-release escrow**'unda durur.
-//! Her çalışanın Varış / Mesai / Bitiş dilimi Trustless Work'te ayrı bir milestone'dur (alıcısı çalışanın kendisi).
-//! Ek İşler kontratı escrow'da approver, service provider, release signer ve platform rolündedir:
-//! işin kurallarını (çalışan mutabakatı, QR kod doğrulaması, hakem kararı, son tarih) uygular ve
-//! koşul sağlanınca milestone'u tamamlandı işaretleyip onaylar ve Trustless Work'e serbest bıraktırır.
-//! Anlaşmazlıkların (ör. hiç gelmeyen çalışan) çözümü Trustless Work'ün dispute mekanizmasında hakemdedir.
+//! Her paydaşın payı Trustless Work'te ayrı bir milestone'dur ve alıcısı paydaşın kendisidir.
+//!
+//! Saha adımlarının ikisi **para hareket ettirmez**, yalnızca kanıttır:
+//!   * **Kod 1** (`check_in`) — ihalecinin sahada elden verdiği kod; çalışanın işe geldiğini kanıtlar.
+//!   * **Kod 2** (`confirm_presence`) — ihalecinin "hâlâ burada mı?" yoklaması; gün boyunca tekrarlanabilir.
+//!
+//! Ödeme tek seferde, iş bitince **gün sonu kodu** (`claim`) girilince yapılır. İşveren işi hiç
+//! kapatmazsa son tarihten sonra `release_after_deadline` Kod 1'i girmiş (yani gelmiş) çalışanlara öder,
+//! hiç gelmeyenlerin payını Trustless Work dispute'una alır; hakem işverene iade eder.
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, Bytes, BytesN, Env,
@@ -31,13 +35,16 @@ pub enum Error {
     DuplicateStakeholder = 8,
     InvalidDeadline = 9,
     DeadlineNotReached = 10,
-    InvalidTranches = 11,
+    AlreadyArrived = 11,
     InvalidArbiter = 12,
     InvalidCommitments = 13,
     InvalidCode = 14,
-    InvalidTranche = 15,
+    InvalidCodeKind = 15,
     AlreadyReleased = 16,
     TooManyMilestones = 17,
+    CodesNotSet = 18,
+    PresenceWindowClosed = 19,
+    InvalidWorkHours = 20,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,26 +52,28 @@ pub enum Error {
 pub enum JobStatus {
     PendingApproval = 0, // İhaleci oluşturdu, çalışanların onayı bekleniyor
     Approved = 1,        // Tüm çalışanlar onayladı, işveren escrow'u fonlayabilir
-    Funded = 2,          // Trustless Work escrow'u fonlandı, dilimler açılabilir
+    Funded = 2,          // Trustless Work escrow'u fonlandı, saha adımları işleyebilir
     Completed = 3,       // Kalan milestone'lar serbest bırakıldı (gelmeyenler hakeme devredildi)
-    Refunded = 4,        // Karşılıklı iptal: açılmamış milestone'lar hakeme (iade için) devredildi
+    Refunded = 4,        // Karşılıklı iptal: ödenmemiş milestone'lar hakeme devredildi
     Closing = 5,         // Kapanış sürüyor: milestone'lar parça parça işleniyor (continue_close)
 }
 
 /// Kapanış türü
 pub const CLOSE_COMPLETE: u32 = 1; // İşveren kapattı: herkese öde
 pub const CLOSE_DEADLINE: u32 = 2; // Son tarih: gelenlere öde, gelmeyenleri hakeme devret
-pub const CLOSE_REFUND: u32 = 3; // Karşılıklı iptal: açılmamışları hakeme devret
+pub const CLOSE_REFUND: u32 = 3; // Karşılıklı iptal: ödenmemişleri hakeme devret
 
 /// Trustless Work her onayda escrow'un tamamını event olarak yayınlar; işlem başına 16 KB event
 /// sınırını aşmamak için kapanışta işlem başına en fazla bu kadar milestone işlenir.
 const CLOSE_BATCH: u32 = 3;
 
-/// Ödeme dilimleri: çalışan her dilimi işverenin QR koduyla (ya da hakem kararıyla) açar.
-pub const TRANCHE_ARRIVAL: u32 = 0; // Varış: kapora
-pub const TRANCHE_MID: u32 = 1; // Mesai ortası
-pub const TRANCHE_FINAL: u32 = 2; // Bitiş: payın tamamı
-pub const TRANCHES: u32 = 3;
+/// Kod 2 · yoklama penceresi: çalışma saatlerinin tam ortasında açılır ve bu kadar süre açık kalır.
+pub const PRESENCE_WINDOW_SECS: u64 = 15 * 60;
+
+/// Saha kodu türleri: paydaş i'nin kodu → `commitments[i * CODES + tür]`.
+pub const CODE_ARRIVAL: u32 = 0; // Kod 1 · varış kanıtı, ödeme yapmaz
+pub const CODE_FINAL: u32 = 1; // Gün sonu kodu · payın tamamını öder
+pub const CODES: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
@@ -78,12 +87,16 @@ pub struct ShareInput {
 pub struct Stakeholder {
     pub address: Address,
     pub share_bps: u32,
-    pub accepted: bool,   // Çalışanın mutabakat onayı
-    pub paid: i128,       // Serbest bırakılan milestone tutarlarının toplamı (Trustless Work ücreti öncesi)
-    pub released: u32,    // Açılmış dilimlerin bit maskesi
-    pub first_milestone: u32, // Trustless Work escrow'undaki ilk milestone indeksi
-    pub amounts: Vec<i128>,   // Dilim (milestone) tutarları
-    pub disputed: u32,        // Hakeme (Trustless Work dispute) devredilen dilimlerin bit maskesi
+    pub accepted: bool, // Çalışanın mutabakat onayı
+    /// Kod 1 girildi ya da hakem işaretledi. Para hareket etmez; son tarih ödemesinde
+    /// "işe geldi mi" ölçütü budur.
+    pub arrived: bool,
+    pub checks: u32,    // Kod 2 yoklaması kaç kez yapıldı (para hareket etmez)
+    pub released: bool, // Payı Trustless Work'ten ödendi
+    pub disputed: bool, // Payı Trustless Work dispute'una (hakeme) devredildi
+    pub paid: i128,     // Ödenen tutar (Trustless Work ücreti öncesi)
+    pub milestone: u32, // Trustless Work escrow'undaki milestone indeksi
+    pub amount: i128,   // Milestone tutarı
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,8 +112,8 @@ pub struct LocationProof {
 }
 
 /// Uyarı türleri
-pub const ALERT_REPORTED_ABSENT: u32 = 1; // Kod 2: işveren "çalışan burada değil" dedi (çalışana bildirim)
-pub const ALERT_LEFT_AREA: u32 = 2; // Konum takibi: çalışan etkinlik alanından çıktı (işverene bildirim)
+pub const ALERT_REPORTED_ABSENT: u32 = 1; // Kod 2: ihaleci "çalışan burada değil" dedi (çalışana bildirim)
+pub const ALERT_LEFT_AREA: u32 = 2; // Konum takibi: çalışan etkinlik alanından çıktı (ihaleciye bildirim)
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
@@ -121,8 +134,9 @@ pub struct JobTerms {
     pub total_amount: i128,
     pub shares: Vec<ShareInput>,
     pub deadline: u64,
-    pub arrival_bps: u32, // Varış kodunda ödenen, payın yüzdesi (kapora)
-    pub mid_bps: u32,     // Mesai kodunda ulaşılan toplam yüzde
+    /// Çalışma saatleri. Kod 2 yoklaması bu aralığın tam ortasında açılır.
+    pub work_start: u64,
+    pub work_end: u64,
     pub venue_lat_e6: i64,
     pub venue_lng_e6: i64,
     pub radius_m: u32,
@@ -138,7 +152,7 @@ pub struct Job {
     pub status: JobStatus,
     /// Bu işin Trustless Work multi-release escrow kontratı
     pub escrow: Address,
-    /// İşverenin deposit sırasında verdiği kod hash'leri: paydaş i, dilim t → [i * 3 + t]
+    /// İhalecinin `set_codes` ile yazdığı kod hash'leri: paydaş i, tür k → [i * CODES + k]
     pub commitments: Vec<BytesN<32>>,
     pub locations: Vec<LocationProof>,
     /// Kod 2 "burada değil" bildirimleri ve alan dışı çıkışlar
@@ -181,12 +195,30 @@ pub struct JobFunded {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TrancheReleased {
+pub struct CodesSet {
+    #[topic]
+    pub job_id: u64,
+    pub contractor: Address,
+}
+
+/// Kod 1 girildi (ya da hakem varışı işaretledi). Para hareket etmez.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedIn {
     #[topic]
     pub job_id: u64,
     #[topic]
     pub worker: Address,
-    pub tranche: u32,
+    pub by_arbiter: bool,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaymentReleased {
+    #[topic]
+    pub job_id: u64,
+    #[topic]
+    pub worker: Address,
     pub amount: i128,
     pub by_arbiter: bool,
 }
@@ -201,6 +233,7 @@ pub struct LocationSubmitted {
     pub distance_m: u32,
 }
 
+/// Kod 2 · yoklama sonucu. Para hareket etmez.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresenceChecked {
@@ -235,6 +268,7 @@ pub struct JobClosed {
 const DAY_IN_LEDGERS: u32 = 17_280;
 const TTL_THRESHOLD: u32 = 7 * DAY_IN_LEDGERS;
 const TTL_EXTEND_TO: u32 = 30 * DAY_IN_LEDGERS;
+/// Trustless Work escrow'u en fazla bu kadar milestone alır; paydaş başına bir milestone var.
 const MAX_MILESTONES: u32 = 50;
 
 fn bump_instance(env: &Env) {
@@ -268,20 +302,20 @@ fn is_contractor(job: &Job, s: &Stakeholder) -> bool {
     s.address == job.contractor
 }
 
-/// Paydaşın milestone tutarları: çalışan için [varış, mesai, bitiş], ihaleci için [payı + yuvarlama artığı].
-fn tranche_amounts(env: &Env, terms: &JobTerms, share_bps: u32, contractor: bool, dust: i128) -> Vec<i128> {
-    let share = terms.total_amount * (share_bps as i128) / 10_000;
-    let mut v = Vec::new(env);
-    if contractor {
-        v.push_back(share + dust);
-    } else {
-        let arrival = share * (terms.arrival_bps as i128) / 10_000;
-        let mid = share * (terms.mid_bps as i128) / 10_000;
-        v.push_back(arrival);
-        v.push_back(mid - arrival);
-        v.push_back(share - mid);
+/// Kod 2 yoklamasının açık olduğu aralık: çalışma saatlerinin ortası + PRESENCE_WINDOW_SECS.
+/// İhaleciye bildirim tam `from` anında gider; `to` sonrasında yoklama yapılamaz.
+pub fn presence_window(terms: &JobTerms) -> (u64, u64) {
+    let mid = terms.work_start + (terms.work_end - terms.work_start) / 2;
+    (mid, mid + PRESENCE_WINDOW_SECS)
+}
+
+fn require_presence_window(env: &Env, terms: &JobTerms) -> Result<u64, Error> {
+    let now = env.ledger().timestamp();
+    let (from, to) = presence_window(terms);
+    if now < from || now >= to {
+        return Err(Error::PresenceWindowClosed);
     }
-    v
+    Ok(now)
 }
 
 fn this(env: &Env) -> Address {
@@ -315,36 +349,41 @@ fn tw_release(env: &Env, escrow: &tw::Client, indices: &Vec<u32>, evidence: &str
     }
 }
 
-/// Çalışanın dilimlerini `tranche`'a kadar (dahil) açar; her dilim bir Trustless Work milestone'udur.
-fn release_up_to(env: &Env, job: &mut Job, idx: u32, tranche: u32, by_arbiter: bool) -> Result<i128, Error> {
-    if tranche >= TRANCHES {
-        return Err(Error::InvalidTranche);
-    }
+/// Paydaşın payını Trustless Work'ten serbest bıraktırır (tek milestone, tek ödeme).
+fn release_stakeholder(env: &Env, job: &mut Job, idx: u32, by_arbiter: bool) -> Result<i128, Error> {
     let mut s = job.stakeholders.get(idx).unwrap();
-    if is_contractor(job, &s) {
-        return Err(Error::InvalidTranche);
-    }
-    if s.released & (1 << tranche) != 0 {
+    if s.released || s.disputed {
         return Err(Error::AlreadyReleased);
     }
     let mut indices: Vec<u32> = Vec::new(env);
-    let mut amount: i128 = 0;
-    for t in 0..=tranche {
-        if s.released & (1 << t) == 0 {
-            indices.push_back(s.first_milestone + t);
-            amount += s.amounts.get(t).unwrap();
-            s.released |= 1 << t;
-        }
-    }
-    let evidence = if by_arbiter { "hakem" } else { "qr" };
-    tw_release(env, &tw::Client::new(env, &job.escrow), &indices, evidence);
-    s.paid += amount;
-    job.stakeholders.set(idx, s.clone());
-    TrancheReleased { job_id: job.id, worker: s.address, tranche, amount, by_arbiter }.publish(env);
+    indices.push_back(s.milestone);
+    tw_release(env, &tw::Client::new(env, &job.escrow), &indices, if by_arbiter { "hakem" } else { "kod" });
+
+    s.released = true;
+    s.paid = s.amount;
+    let (amount, address) = (s.amount, s.address.clone());
+    job.stakeholders.set(idx, s);
+    PaymentReleased { job_id: job.id, worker: address, amount, by_arbiter }.publish(env);
     Ok(amount)
 }
 
-/// Kapanışın bir parçasını işler: en fazla CLOSE_BATCH açık milestone'u ya serbest bırakır ya da
+/// İhalecinin yazdığı taahhütle girilen kodu karşılaştırır.
+fn verify_code(env: &Env, job: &Job, idx: u32, kind: u32, code: &Bytes) -> Result<(), Error> {
+    if kind >= CODES {
+        return Err(Error::InvalidCodeKind);
+    }
+    if job.commitments.is_empty() {
+        return Err(Error::CodesNotSet);
+    }
+    let expected = job.commitments.get(idx * CODES + kind).ok_or(Error::InvalidCommitments)?;
+    let actual: BytesN<32> = env.crypto().sha256(code).into();
+    if actual != expected {
+        return Err(Error::InvalidCode);
+    }
+    Ok(())
+}
+
+/// Kapanışın bir parçasını işler: en fazla CLOSE_BATCH milestone'u ya serbest bırakır ya da
 /// Trustless Work'te dispute'a alır (hakem çözer, ör. işverene iade). Bittiyse işi kapatır.
 fn process_close(env: &Env, job: &mut Job) {
     let escrow = tw::Client::new(env, &job.escrow);
@@ -356,37 +395,29 @@ fn process_close(env: &Env, job: &mut Job) {
 
     for i in 0..job.stakeholders.len() {
         let mut s = job.stakeholders.get(i).unwrap();
-        let pay = match job.close_mode {
-            CLOSE_COMPLETE => true,
-            CLOSE_DEADLINE => is_contractor(job, &s) || s.released & (1 << TRANCHE_ARRIVAL) != 0,
-            _ => false,
-        };
-        let mut changed = false;
-        for t in 0..s.amounts.len() {
-            if (s.released | s.disputed) & (1 << t) != 0 {
-                continue;
-            }
-            if picked == CLOSE_BATCH {
-                remaining = true;
-                break;
-            }
-            picked += 1;
-            changed = true;
-            if pay {
-                to_release.push_back(s.first_milestone + t);
-                s.paid += s.amounts.get(t).unwrap();
-                s.released |= 1 << t;
-            } else {
-                to_dispute.push_back(s.first_milestone + t);
-                s.disputed |= 1 << t;
-            }
+        if s.released || s.disputed {
+            continue;
         }
-        if changed {
-            job.stakeholders.set(i, s);
-        }
-        if remaining {
+        if picked == CLOSE_BATCH {
+            remaining = true;
             break;
         }
+        picked += 1;
+        // Son tarih kapanışında ölçüt Kod 1'dir: gelen çalışan payını alır, gelmeyeninki hakeme gider.
+        let pay = match job.close_mode {
+            CLOSE_COMPLETE => true,
+            CLOSE_DEADLINE => is_contractor(job, &s) || s.arrived,
+            _ => false,
+        };
+        if pay {
+            to_release.push_back(s.milestone);
+            s.paid = s.amount;
+            s.released = true;
+        } else {
+            to_dispute.push_back(s.milestone);
+            s.disputed = true;
+        }
+        job.stakeholders.set(i, s);
     }
 
     tw_release(env, &escrow, &to_release, "kapanis");
@@ -398,10 +429,8 @@ fn process_close(env: &Env, job: &mut Job) {
         job.status = if job.close_mode == CLOSE_REFUND { JobStatus::Refunded } else { JobStatus::Completed };
         let mut disputed_amount: i128 = 0;
         for s in job.stakeholders.iter() {
-            for t in 0..s.amounts.len() {
-                if s.disputed & (1 << t) != 0 {
-                    disputed_amount += s.amounts.get(t).unwrap();
-                }
+            if s.disputed {
+                disputed_amount += s.amount;
             }
         }
         JobClosed { job_id: job.id, status: job.status, disputed_amount }.publish(env);
@@ -434,12 +463,13 @@ impl EkIslerContract {
         if terms.total_amount <= 0 {
             return Err(Error::InvalidAmount);
         }
-        if terms.deadline <= env.ledger().timestamp() {
+        let now = env.ledger().timestamp();
+        if terms.deadline <= now {
             return Err(Error::InvalidDeadline);
         }
-        // Her dilim ayrı bir Trustless Work milestone'u olduğu için hepsi sıfırdan büyük olmalı
-        if terms.arrival_bps == 0 || terms.arrival_bps >= terms.mid_bps || terms.mid_bps >= 10_000 {
-            return Err(Error::InvalidTranches);
+        // Çalışma saatleri Kod 2 yoklamasının zamanını belirler: bitişi geçmiş bir iş kurulamaz.
+        if terms.work_start >= terms.work_end || terms.work_end <= now || terms.work_end > terms.deadline {
+            return Err(Error::InvalidWorkHours);
         }
         if terms.shares.is_empty() {
             return Err(Error::InvalidShares);
@@ -466,7 +496,6 @@ impl EkIslerContract {
             return Err(Error::InvalidShares);
         }
 
-        // Paylar ve Trustless Work milestone'ları
         let mut shares_sum: i128 = 0;
         for s in terms.shares.iter() {
             shares_sum += terms.total_amount * (s.share_bps as i128) / 10_000;
@@ -486,22 +515,19 @@ impl EkIslerContract {
             let contractor_row = s.address == contractor;
             // İhaleci listede yoksa yuvarlama artığı ilk paydaşa eklenir
             let row_dust = if contractor_row || (!has_contractor && i == 0) { dust } else { 0 };
-            let amounts = tranche_amounts(&env, &terms, s.share_bps, contractor_row, row_dust);
-            let first = milestones.len();
-            for (t, amount) in amounts.clone().iter().enumerate() {
-                if amount <= 0 {
-                    return Err(Error::InvalidAmount);
-                }
-                let label = if contractor_row { "ihaleci" } else { ["varis", "mesai", "bitis"][t] };
-                milestones.push_back(tw::Milestone {
-                    description: String::from_str(&env, label),
-                    status: String::from_str(&env, "-"),
-                    evidence: String::from_str(&env, ""),
-                    amount,
-                    flags: tw::Flags { approved: false, disputed: false, released: false, resolved: false },
-                    receiver: s.address.clone(),
-                });
+            let amount = terms.total_amount * (s.share_bps as i128) / 10_000 + row_dust;
+            if amount <= 0 {
+                return Err(Error::InvalidAmount);
             }
+            let milestone = milestones.len();
+            milestones.push_back(tw::Milestone {
+                description: String::from_str(&env, if contractor_row { "ihaleci" } else { "pay" }),
+                status: String::from_str(&env, "-"),
+                evidence: String::from_str(&env, ""),
+                amount,
+                flags: tw::Flags { approved: false, disputed: false, released: false, resolved: false },
+                receiver: s.address.clone(),
+            });
             let accepted = contractor_row;
             if !accepted {
                 all_accepted = false;
@@ -510,11 +536,13 @@ impl EkIslerContract {
                 address: s.address,
                 share_bps: s.share_bps,
                 accepted,
+                arrived: false,
+                checks: 0,
+                released: false,
+                disputed: false,
                 paid: 0,
-                released: 0,
-                first_milestone: first,
-                amounts,
-                disputed: 0,
+                milestone,
+                amount,
             });
         }
         if milestones.len() > MAX_MILESTONES {
@@ -565,7 +593,7 @@ impl EkIslerContract {
         Ok(job_id)
     }
 
-    /// 2. Çalışan payını, dilim oranlarını ve hakemi cüzdan imzasıyla kabul eder.
+    /// 2. Çalışan payını ve şartları cüzdan imzasıyla kabul eder.
     pub fn accept_job(env: Env, job_id: u64, worker: Address) -> Result<(), Error> {
         worker.require_auth();
 
@@ -587,8 +615,8 @@ impl EkIslerContract {
         Ok(())
     }
 
-    /// 3. İşveren Trustless Work escrow'unu fonlar ve her paydaş × dilim için QR kodlarının sha256 hash'lerini verir.
-    pub fn deposit(env: Env, job_id: u64, commitments: Vec<BytesN<32>>) -> Result<(), Error> {
+    /// 3. İşveren Trustless Work escrow'unu fonlar. Saha kodları işverende değil ihalecidedir.
+    pub fn deposit(env: Env, job_id: u64) -> Result<(), Error> {
         let mut job = load_job(&env, job_id)?;
         job.terms.client.require_auth();
 
@@ -597,45 +625,162 @@ impl EkIslerContract {
             JobStatus::PendingApproval => return Err(Error::NotAllAccepted),
             _ => return Err(Error::InvalidStatus),
         }
-        if commitments.len() != job.stakeholders.len() * TRANCHES {
-            return Err(Error::InvalidCommitments);
-        }
 
         let escrow = tw::Client::new(&env, &job.escrow);
         escrow.fund_escrow(&job.terms.client, &escrow.get_escrow(), &job.terms.total_amount);
 
         job.status = JobStatus::Funded;
-        job.commitments = commitments;
         save_job(&env, &job);
 
         JobFunded { job_id, amount: job.terms.total_amount }.publish(&env);
         Ok(())
     }
 
-    /// 4. Çalışan, işverenin gösterdiği QR'daki kodu okutarak dilimi açar; Trustless Work milestone'u anında ödenir.
-    pub fn claim(env: Env, job_id: u64, worker: Address, tranche: u32, code: Bytes) -> Result<i128, Error> {
+    /// 3b. İhaleci saha kodlarını belirler: paydaş i × tür k → `commitments[i * CODES + k] = sha256(kod)`.
+    /// Kodların kendisi ihalecinin cihazında kalır; Kod 1 sahada elden verilir, gün sonu kodu iş bitince.
+    /// Ödenmemiş paylar için yeniden belirlenebilir (ihaleci cihaz değiştirirse): eski kodlar geçersiz olur.
+    pub fn set_codes(env: Env, job_id: u64, commitments: Vec<BytesN<32>>) -> Result<(), Error> {
+        let mut job = load_job(&env, job_id)?;
+        job.contractor.require_auth();
+
+        if job.status != JobStatus::Approved && job.status != JobStatus::Funded {
+            return Err(Error::InvalidStatus);
+        }
+        if commitments.len() != job.stakeholders.len() * CODES {
+            return Err(Error::InvalidCommitments);
+        }
+
+        job.commitments = commitments;
+        let contractor = job.contractor.clone();
+        save_job(&env, &job);
+
+        CodesSet { job_id, contractor }.publish(&env);
+        Ok(())
+    }
+
+    /// 4. **Kod 1** · varış: çalışan ihalecinin elden verdiği kodu girer. **Para hareket etmez**;
+    /// zincire yalnızca "bu çalışan işe geldi" kanıtı düşer. Son tarih ödemesinin ölçütü budur.
+    pub fn check_in(env: Env, job_id: u64, worker: Address, code: Bytes) -> Result<(), Error> {
         worker.require_auth();
 
         let mut job = load_job(&env, job_id)?;
         if job.status != JobStatus::Funded {
             return Err(Error::InvalidStatus);
         }
-        if tranche >= TRANCHES {
-            return Err(Error::InvalidTranche);
+        let idx = find(&job, &worker)?;
+        let mut s = job.stakeholders.get(idx).unwrap();
+        if is_contractor(&job, &s) {
+            return Err(Error::NotStakeholder);
+        }
+        if s.arrived {
+            return Err(Error::AlreadyArrived);
+        }
+        verify_code(&env, &job, idx, CODE_ARRIVAL, &code)?;
+
+        s.arrived = true;
+        job.stakeholders.set(idx, s);
+        save_job(&env, &job);
+
+        CheckedIn { job_id, worker, by_arbiter: false }.publish(&env);
+        Ok(())
+    }
+
+    /// 5. **Gün sonu kodu**: iş bitince ihaleci kodu verir, çalışan girer ve payının **tamamı** ödenir.
+    /// Gün sonu kodu varışı da kanıtladığı için Kod 1 girilmemişse birlikte işaretlenir.
+    pub fn claim(env: Env, job_id: u64, worker: Address, code: Bytes) -> Result<i128, Error> {
+        worker.require_auth();
+
+        let mut job = load_job(&env, job_id)?;
+        if job.status != JobStatus::Funded {
+            return Err(Error::InvalidStatus);
         }
         let idx = find(&job, &worker)?;
-        let expected = job.commitments.get(idx * TRANCHES + tranche).ok_or(Error::InvalidCommitments)?;
-        let actual: BytesN<32> = env.crypto().sha256(&code).into();
-        if actual != expected {
-            return Err(Error::InvalidCode);
-        }
+        verify_code(&env, &job, idx, CODE_FINAL, &code)?;
 
-        let amount = release_up_to(&env, &mut job, idx, tranche, false)?;
+        let mut s = job.stakeholders.get(idx).unwrap();
+        if !s.arrived && !is_contractor(&job, &s) {
+            s.arrived = true;
+            job.stakeholders.set(idx, s);
+        }
+        let amount = release_stakeholder(&env, &mut job, idx, false)?;
         save_job(&env, &job);
         Ok(amount)
     }
 
-    /// Çalışan, işveren kod vermezse etkinlik noktasına mesafesini ve ham ölçümün hash'ini kanıt olarak kaydeder.
+    /// **Kod 2** · tek çalışan için yoklama. **Para hareket etmez.**
+    /// Yalnızca yoklama penceresi (çalışma saatlerinin ortası + 15 dk) açıkken çağrılabilir.
+    /// "Çalışıyor" → yoklama zincire yazılır. "Çalışmıyor" → uyarı düşer, çalışana bildirim gider.
+    pub fn confirm_presence(env: Env, job_id: u64, worker: Address, present: bool) -> Result<(), Error> {
+        let mut job = load_job(&env, job_id)?;
+        job.contractor.require_auth();
+
+        if job.status != JobStatus::Funded {
+            return Err(Error::InvalidStatus);
+        }
+        let now = require_presence_window(&env, &job.terms)?;
+        let idx = find(&job, &worker)?;
+        let mut s = job.stakeholders.get(idx).unwrap();
+        if is_contractor(&job, &s) {
+            return Err(Error::NotStakeholder);
+        }
+        if present {
+            s.checks = s.checks.saturating_add(1);
+            job.stakeholders.set(idx, s);
+        } else {
+            job.alerts.push_back(Alert { worker: worker.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0, timestamp: now });
+            AlertRaised { job_id, worker: worker.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0 }.publish(&env);
+        }
+        save_job(&env, &job);
+        PresenceChecked { job_id, worker, present }.publish(&env);
+        Ok(())
+    }
+
+    /// **Kod 2** · toplu yoklama: ihaleciye çalışma saatlerinin ortasında giden bildirimin yanıtı.
+    /// `absent` listesindeki çalışanlara "ihaleci çalışmadığını söylüyor" uyarısı düşer; listede
+    /// olmayan herkes çalışıyor sayılır. **Para hareket etmez.** Tek işlemde tüm ekibi kapsar.
+    pub fn confirm_presence_all(env: Env, job_id: u64, absent: Vec<Address>) -> Result<(), Error> {
+        let mut job = load_job(&env, job_id)?;
+        job.contractor.require_auth();
+
+        if job.status != JobStatus::Funded {
+            return Err(Error::InvalidStatus);
+        }
+        let now = require_presence_window(&env, &job.terms)?;
+
+        // Listedeki her adres bu işin çalışanı olmalı
+        for a in absent.iter() {
+            let idx = find(&job, &a)?;
+            if is_contractor(&job, &job.stakeholders.get(idx).unwrap()) {
+                return Err(Error::NotStakeholder);
+            }
+        }
+
+        for i in 0..job.stakeholders.len() {
+            let mut s = job.stakeholders.get(i).unwrap();
+            if is_contractor(&job, &s) || s.released || s.disputed {
+                continue;
+            }
+            let mut missing = false;
+            for a in absent.iter() {
+                if a == s.address {
+                    missing = true;
+                    break;
+                }
+            }
+            if missing {
+                job.alerts.push_back(Alert { worker: s.address.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0, timestamp: now });
+                AlertRaised { job_id, worker: s.address.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0 }.publish(&env);
+            } else {
+                s.checks = s.checks.saturating_add(1);
+            }
+            PresenceChecked { job_id, worker: s.address.clone(), present: !missing }.publish(&env);
+            job.stakeholders.set(i, s);
+        }
+        save_job(&env, &job);
+        Ok(())
+    }
+
+    /// Çalışan, ihaleci Kod 1'i vermezse etkinliğe mesafesini ve ham ölçümün hash'ini kanıt olarak kaydeder.
     pub fn submit_location(
         env: Env,
         job_id: u64,
@@ -667,32 +812,9 @@ impl EkIslerContract {
         Ok(())
     }
 
-    /// Kod 2 · devam kontrolü: işveren çalışanın hâlâ iş yerinde olup olmadığını onaylar.
-    /// "Burada" → mesai dilimi (gerekirse kapora da) Trustless Work'ten anında ödenir.
-    /// "Burada değil" → zincire uyarı düşer, çalışana bildirim gider; para hareket etmez.
-    pub fn confirm_presence(env: Env, job_id: u64, worker: Address, present: bool) -> Result<i128, Error> {
-        let mut job = load_job(&env, job_id)?;
-        job.terms.client.require_auth();
-
-        if job.status != JobStatus::Funded {
-            return Err(Error::InvalidStatus);
-        }
-        let idx = find(&job, &worker)?;
-        let amount = if present {
-            release_up_to(&env, &mut job, idx, TRANCHE_MID, false)?
-        } else {
-            let now = env.ledger().timestamp();
-            job.alerts.push_back(Alert { worker: worker.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0, timestamp: now });
-            AlertRaised { job_id, worker: worker.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0 }.publish(&env);
-            0
-        };
-        save_job(&env, &job);
-        PresenceChecked { job_id, worker, present }.publish(&env);
-        Ok(amount)
-    }
-
-    /// Hakem, konum kanıtını inceleyip (ör. işveren varış kodunu vermediyse) bir dilimi açar.
-    pub fn arbiter_release(env: Env, job_id: u64, worker: Address, tranche: u32) -> Result<i128, Error> {
+    /// Hakem, konum kanıtına bakıp (ör. ihaleci Kod 1'i vermediyse) çalışanı **gelmiş** işaretler.
+    /// Para hareket etmez; çalışan böylece son tarih ödemesine dahil olur.
+    pub fn arbiter_confirm_arrival(env: Env, job_id: u64, worker: Address) -> Result<(), Error> {
         let mut job = load_job(&env, job_id)?;
         job.terms.arbiter.require_auth();
 
@@ -700,12 +822,36 @@ impl EkIslerContract {
             return Err(Error::InvalidStatus);
         }
         let idx = find(&job, &worker)?;
-        let amount = release_up_to(&env, &mut job, idx, tranche, true)?;
+        let mut s = job.stakeholders.get(idx).unwrap();
+        if is_contractor(&job, &s) {
+            return Err(Error::NotStakeholder);
+        }
+        if s.arrived {
+            return Err(Error::AlreadyArrived);
+        }
+        s.arrived = true;
+        job.stakeholders.set(idx, s);
+        save_job(&env, &job);
+
+        CheckedIn { job_id, worker, by_arbiter: true }.publish(&env);
+        Ok(())
+    }
+
+    /// Hakem, işi bitmiş sayıp çalışanın payını son tarihi beklemeden serbest bıraktırır.
+    pub fn arbiter_release(env: Env, job_id: u64, worker: Address) -> Result<i128, Error> {
+        let mut job = load_job(&env, job_id)?;
+        job.terms.arbiter.require_auth();
+
+        if job.status != JobStatus::Funded {
+            return Err(Error::InvalidStatus);
+        }
+        let idx = find(&job, &worker)?;
+        let amount = release_stakeholder(&env, &mut job, idx, true)?;
         save_job(&env, &job);
         Ok(amount)
     }
 
-    /// 5. İşveren işi kapatır: tüm açılmamış milestone'lar serbest bırakılır.
+    /// 6. İşveren işi kapatır: ödenmemiş tüm paylar serbest bırakılır.
     pub fn complete_and_split(env: Env, job_id: u64) -> Result<(), Error> {
         let mut job = load_job(&env, job_id)?;
         job.terms.client.require_auth();
@@ -718,9 +864,8 @@ impl EkIslerContract {
         Ok(())
     }
 
-    /// 6. Son tarih geçti ve işveren kapatmadı: işe gelmiş (varış dilimi açılmış) çalışanlar ve ihaleci
-    /// kalanlarını alır; hiç gelmeyenlerin milestone'ları Trustless Work'te dispute'a alınır ve
-    /// hakem bunları işverene iade eder. İmza gerekmez.
+    /// 7. Son tarih geçti ve işveren kapatmadı: Kod 1'i girmiş (gelmiş) çalışanlar ve ihaleci payını alır;
+    /// hiç gelmeyenlerin payı Trustless Work'te dispute'a alınır ve hakem işverene iade eder. İmza gerekmez.
     pub fn release_after_deadline(env: Env, job_id: u64) -> Result<(), Error> {
         let mut job = load_job(&env, job_id)?;
 
@@ -735,7 +880,7 @@ impl EkIslerContract {
         Ok(())
     }
 
-    /// 7. Karşılıklı iptal (işveren + ihaleci): açılmış dilimler çalışanda kalır, açılmamış milestone'lar
+    /// 8. Karşılıklı iptal (işveren + ihaleci): ödenmiş paylar çalışanda kalır, ödenmemişler
     /// Trustless Work'te dispute'a alınır; hakem bunları işverene iade eder.
     pub fn refund(env: Env, job_id: u64) -> Result<(), Error> {
         let mut job = load_job(&env, job_id)?;

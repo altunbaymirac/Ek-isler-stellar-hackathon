@@ -12,6 +12,14 @@ interface Row {
   percent: string;
 }
 
+/** Çalışma süresi hazır seçenekleri (dakika). Kod 2 yoklaması sürenin tam ortasında açılır. */
+const WORK_PRESETS: [string, number][] = [
+  ["2 dk (demo)", 2],
+  ["4 saat", 240],
+  ["8 saat", 480],
+  ["12 saat", 720],
+];
+
 const DEADLINE_PRESETS: [string, number][] = [
   ["3 dk (demo)", 3 * 60],
   ["1 gün", 24 * 3600],
@@ -37,10 +45,10 @@ export function CreateJob() {
   ]);
   const [contractorPct, setContractorPct] = useState("50");
   const [deadline, setDeadline] = useState(() => toLocalInput(new Date(Date.now() + 24 * 3600 * 1000)));
+  const [workStart, setWorkStart] = useState(() => toLocalInput(new Date()));
+  const [workEnd, setWorkEnd] = useState(() => toLocalInput(new Date(Date.now() + 8 * 3600 * 1000)));
   const [arbiterWho, setArbiterWho] = useState("arbiter");
   const [arbiterCustom, setArbiterCustom] = useState("");
-  const [arrivalPct, setArrivalPct] = useState("20");
-  const [midPct, setMidPct] = useState("50");
   const [venue, setVenue] = useState({ lat: "41.033900", lng: "28.977200", radius: "300" });
 
   const resolve = (who: string, custom: string) =>
@@ -76,11 +84,18 @@ export function CreateJob() {
   if (stakeholders.some((s) => !StrKey.isValidEd25519PublicKey(s.address))) problems.push("Geçersiz çalışan adresi var");
   if (new Set(stakeholders.map((s) => s.address)).size !== stakeholders.length) problems.push("Aynı kişi iki kez eklenmiş");
   if (new Date(deadline).getTime() <= Date.now()) problems.push("Son tarih gelecekte olmalı");
+  const wsMs = new Date(workStart).getTime();
+  const weMs = new Date(workEnd).getTime();
+  if (!(weMs > wsMs)) problems.push("Çalışma bitişi başlangıçtan sonra olmalı");
+  else if (weMs <= Date.now()) problems.push("Çalışma bitişi gelecekte olmalı");
+  else if (weMs > new Date(deadline).getTime()) problems.push("Çalışma bitişi son tarihi geçemez");
+  // Kontrattaki presence_window ile birebir aynı hesap (saniye cinsinden tam ortası)
+  const wsSec = Math.floor(wsMs / 1000);
+  const weSec = Math.floor(weMs / 1000);
+  const kod2At = weMs > wsMs ? new Date((wsSec + Math.floor((weSec - wsSec) / 2)) * 1000) : null;
   if (!StrKey.isValidEd25519PublicKey(arbiterAddr)) problems.push("Hakem adresi geçersiz");
   else if (arbiterAddr === clientAddr || arbiterAddr === signer?.address || stakeholders.some((s) => s.address === arbiterAddr))
     problems.push("Hakem; işveren, ihaleci ya da çalışanlardan biri olamaz");
-  if (!(Number(arrivalPct) > 0 && Number(arrivalPct) < Number(midPct) && Number(midPct) < 100))
-    problems.push("Dilimler geçersiz: 0 < kapora < mesai < %100 (her dilim ayrı Trustless Work milestone'u)");
   if (!Number.isFinite(Number(venue.lat)) || !Number.isFinite(Number(venue.lng)) || !(Number(venue.radius) > 0))
     problems.push("Etkinlik konumu geçersiz");
 
@@ -94,8 +109,8 @@ export function CreateJob() {
         totalUsdc: amount,
         shares: stakeholders.map((s) => ({ address: s.address, share_bps: Math.round(s.percent * 100) })),
         deadline: new Date(deadline),
-        arrivalPct: Number(arrivalPct),
-        midPct: Number(midPct),
+        workStart: new Date(workStart),
+        workEnd: new Date(workEnd),
         venue: { lat: Number(venue.lat), lng: Number(venue.lng), radiusM: Number(venue.radius) },
       });
       toast("ok", `İş #${result} oluşturuldu. Çalışanların onayı bekleniyor.`, hash);
@@ -113,7 +128,8 @@ export function CreateJob() {
           <h2>Yeni iş tanımla</h2>
           <p className="muted small" style={{ margin: 0 }}>
             İhaleci olarak işi ve payları zincire yazarsın. Çalışanlara verdiğin oranları{" "}
-            <b>her çalışan kendi cüzdanıyla onaylamadan</b> işveren para yatıramaz. Çalışan sahada işverenin QR kodlarını okuttukça ödemesini alır.
+            <b>her çalışan kendi cüzdanıyla onaylamadan</b> işveren para yatıramaz. Para kilitlendikten sonra saha kodlarını sen
+            oluşturur, Kod 1'i sahada elden verir, gün sonu QR'ını iş bitince okutursun.
           </p>
         </div>
 
@@ -160,17 +176,45 @@ export function CreateJob() {
         </label>
 
         <div className="field">
-          Saha ödeme dilimleri (her çalışanın payı üzerinden, kümülatif)
-          <span className="row" style={{ gap: 8, fontWeight: 400 }}>
-            <span className="row" style={{ gap: 4 }}>
-              Varış QR'ı (kapora) %
-              <input style={{ width: 64 }} inputMode="decimal" value={arrivalPct} onChange={(e) => setArrivalPct(e.target.value.replace(",", "."))} />
+          Çalışma saatleri
+          <span className="row" style={{ gap: 6, fontWeight: 400 }}>
+            <input type="datetime-local" value={workStart} onChange={(e) => setWorkStart(e.target.value)} aria-label="Çalışma başlangıcı" />
+            <span className="muted">→</span>
+            <input type="datetime-local" value={workEnd} onChange={(e) => setWorkEnd(e.target.value)} aria-label="Çalışma bitişi" />
+          </span>
+          <span className="row" style={{ gap: 6 }}>
+            {WORK_PRESETS.map(([l, mins]) => (
+              <button
+                key={l}
+                type="button"
+                className="btn secondary sm"
+                onClick={() => {
+                  const now = Date.now();
+                  setWorkStart(toLocalInput(new Date(now)));
+                  setWorkEnd(toLocalInput(new Date(now + mins * 60_000)));
+                }}
+              >
+                {l}
+              </button>
+            ))}
+          </span>
+          {kod2At && (
+            <span className="small muted" style={{ fontWeight: 400 }}>
+              🔔 <b>Kod 2 yoklaması</b> çalışma süresinin tam ortasında,{" "}
+              <b>{kod2At.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })}</b> itibarıyla sana bildirim olarak
+              gelecek ve <b>15 dakika</b> açık kalacak. Bu süre zincirde yazılı; dışında yoklama yapılamaz.
             </span>
-            <span className="row" style={{ gap: 4 }}>
-              Mesai QR'ı %
-              <input style={{ width: 64 }} inputMode="decimal" value={midPct} onChange={(e) => setMidPct(e.target.value.replace(",", "."))} />
-            </span>
-            <span className="muted">Bitiş QR'ı %100</span>
+          )}
+        </div>
+
+        <div className="field">
+          Saha akışı
+          <span className="small muted" style={{ fontWeight: 400 }}>
+            <b>Kod 1</b> · çalışan gelince ona elden verdiğin kodu girer, zincire "geldi" yazılır. <b>Kod 2</b> · çalışma süresinin
+            ortasında sana bildirim gelir, çalışmayanları işaretlersin. <b>Gün sonu QR'ı</b> · iş bitince okuttuğun QR, çalışanın
+            payının tamamını öder.
+            <br />
+            İlk iki adım para hareket ettirmez; ödeme yalnızca gün sonu QR'ında yapılır.
           </span>
         </div>
 

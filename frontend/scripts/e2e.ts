@@ -9,7 +9,7 @@ import * as anchor from "../src/lib/anchor.ts";
 import * as c from "../src/lib/contract.ts";
 import { ensureReady, getBalances } from "../src/lib/horizon.ts";
 import { keypairSigner } from "../src/lib/signer.ts";
-import { commitReading, distanceM, makeCodes } from "../src/lib/codes.ts";
+import { CODE_ARRIVAL, CODE_FINAL, CODES, commitReading, distanceM, makeCodes } from "../src/lib/codes.ts";
 
 const log = (...a: unknown[]) => console.log("•", ...a);
 
@@ -61,8 +61,9 @@ const created = await c.createJob(contractor, {
     { address: w2.address, share_bps: 1800 },
   ],
   deadline: new Date(Date.now() + 2 * 24 * 3600 * 1000),
-  arrivalPct: 20,
-  midPct: 50,
+  // Kod 2 yoklaması çalışma saatlerinin tam ortasında açılır; senaryo beklemesin diye orta nokta "şimdi"
+  workStart: new Date(Date.now() - 60_000),
+  workEnd: new Date(Date.now() + 60_000),
   venue: { lat: 41.0339, lng: 28.9772, radiusM: 300 },
 });
 const id = created.result;
@@ -70,7 +71,7 @@ log(`create_job #${id} (${total} USDC)`, created.hash);
 
 const { codes, commitments } = await makeCodes(3);
 try {
-  await c.depositJob(client, id, commitments);
+  await c.depositJob(client, id);
   throw new Error("HATA: onaysız deposit geçti!");
 } catch (e) {
   log("Onaysız deposit reddedildi ✓", c.friendlyError(e));
@@ -78,30 +79,49 @@ try {
 
 log("accept w1", (await c.acceptJob(w1, id)).hash);
 log("accept w2", (await c.acceptJob(w2, id)).hash);
-log("deposit + kod hash'leri", (await c.depositJob(client, id, commitments)).hash);
+log("deposit · işveren parayı kilitler", (await c.depositJob(client, id)).hash);
+try {
+  await c.checkIn(w1, id, codes[1 * CODES + CODE_ARRIVAL]);
+  throw new Error("HATA: kodlar belirlenmeden check_in geçti!");
+} catch (e) {
+  log("Kodlar belirlenmeden Kod 1 reddedildi ✓", c.friendlyError(e));
+}
+log("set_codes · ihaleci saha kodlarını yazar", (await c.setCodes(contractor, id, commitments)).hash);
 const escrowId = (await c.getJob(id)).escrow;
 log("Trustless Work escrow:", escrowId, "bakiye:", (await getBalances(escrowId).catch(() => null)) ?? "(kontrat)");
 log("  görüntüleyici:", `https://viewer.trustlesswork.com/testnet/v1/${escrowId}`);
 
-// w1: işveren varış ve mesai QR'larını gösterir
-const a = await c.claimTranche(w1, id, 0, codes[1 * 3 + 0]);
-log("w1 varış QR →", c.fromUnits(a.result, 4), "USDC", a.hash);
-try {
-  await c.claimTranche(w1, id, 1, codes[2 * 3 + 1]);
-  throw new Error("HATA: başkasının kodu geçti!");
-} catch (e) {
-  log("Başka çalışanın kodu reddedildi ✓", c.friendlyError(e));
-}
-const m = await c.claimTranche(w1, id, 1, codes[1 * 3 + 1]);
-log("w1 mesai QR →", c.fromUnits(m.result, 4), "USDC", m.hash);
+// w1: ihaleci sahada Kod 1'i elden verir — para hareket etmemeli
+const before = (await getBalances(w1.address)).usdc;
+log("w1 Kod 1 · varış", (await c.checkIn(w1, id, codes[1 * CODES + CODE_ARRIVAL])).hash);
+const afterArrival = (await getBalances(w1.address)).usdc;
+log(`Kod 1 sonrası w1 bakiyesi ${before} → ${afterArrival} ${before === afterArrival ? "(değişmedi ✓)" : "(HATA: para hareket etti!)"}`);
+log("w1 geldi mi:", (await c.getJob(id)).stakeholders[1].arrived);
 
-// w2: işveren varış kodunu vermiyor → konum kanıtı + hakem
+try {
+  await c.claimPayment(w1, id, codes[2 * CODES + CODE_FINAL]);
+  throw new Error("HATA: başkasının gün sonu QR'ı geçti!");
+} catch (e) {
+  log("Başka çalışanın gün sonu QR'ı reddedildi ✓", c.friendlyError(e));
+}
+
+// Kod 2 · yoklama penceresi (çalışma saatlerinin ortası + 15 dk): para hareket etmemeli
+log("Kod 2 · ihaleci 'herkes çalışıyor' dedi", (await c.confirmPresenceAll(contractor, id, [])).hash);
+const afterCheck = (await getBalances(w1.address)).usdc;
+log(`Kod 2 sonrası w1 bakiyesi ${afterCheck} ${afterArrival === afterCheck ? "(değişmedi ✓)" : "(HATA: para hareket etti!)"}`);
+
+// Gün sonu QR'ı: payın tamamı tek seferde
+const m = await c.claimPayment(w1, id, codes[1 * CODES + CODE_FINAL]);
+log("w1 gün sonu QR →", c.fromUnits(m.result, 4), "USDC", m.hash);
+
+// w2: ihaleci Kod 1'i vermiyor → konum kanıtı + hakem
 const loc = await commitReading({ lat: 41.03395, lng: 28.97725, at: Date.now() });
 const meters = Math.round(distanceM(41.03395, 28.97725, 41.0339, 28.9772));
 log(`w2 konum kanıtı (${meters} m, zincirde yalnızca mesafe + hash)`, (await c.submitLocation(w2, id, meters, loc.hash)).hash);
 await ensureReady(arbiter);
-const r = await c.arbiterRelease(arbiter, id, w2.address, 0);
-log("hakem w2 kaporasını açtı →", c.fromUnits(r.result, 4), "USDC", r.hash);
+log("hakem w2'yi gelmiş işaretledi (ödeme değil)", (await c.arbiterConfirmArrival(arbiter, id, w2.address)).hash);
+const r = await c.arbiterRelease(arbiter, id, w2.address);
+log("hakem w2 payını serbest bıraktı →", c.fromUnits(r.result, 4), "USDC", r.hash);
 
 log("complete_and_split", (await c.completeJob(client, id)).hash);
 const job = await c.getJob(id);
