@@ -101,129 +101,126 @@ export default function App() {
 
   const needsSetup = balances && (!balances.funded || balances.usdc === null);
 
+  const tryValue = balances?.usdc != null && tryPerUsdc ? Number(balances.usdc) * tryPerUsdc : null;
+
   return (
     <AppCtx.Provider value={ctx}>
-      <header className="topbar">
-        <div className="topbar-inner">
+      <div className="band">
+        <header className="topbar-inner">
           <div className="brand">
             <div className="brand-mark">Eİ</div>
             <div>
-              Ek İşler
-              <br />
-              <small>Kısa süreli işler için güvenli ödeme paylaşımı</small>
+              <div className="brand-name">Ek İşler</div>
+              <div className="brand-sub">Kısa süreli işlerde güvenli ödeme</div>
             </div>
           </div>
           <div className="spacer" />
           <span className="net-pill">Stellar Testnet</span>
-          <a className="small" href={expertAccount(CONTRACT_ID)} target="_blank" rel="noreferrer">
-            Kontrat ↗
-          </a>
+        </header>
+
+        <div className="band-grid">
+          <div>
+            <div className="who-label">Kim olarak devam ediyorsun?</div>
+            <div className="accounts" role="radiogroup" aria-label="Aktif hesap">
+              {DEMO_ROLES.map((r) => (
+                <button
+                  key={r.key}
+                  role="radio"
+                  aria-checked={activeKey === r.key}
+                  className={`acct ${activeKey === r.key ? "active" : ""}`}
+                  onClick={() => selectAccount(r.key)}
+                  title={r.hint}
+                  aria-label={`${r.label}: ${r.hint}`}
+                >
+                  <span className="emoji">{r.emoji}</span>
+                  <span className="name">{r.label}</span>
+                </button>
+              ))}
+              {wallet ? (
+                <button
+                  role="radio"
+                  aria-checked={activeKey === "wallet"}
+                  className={`acct ${activeKey === "wallet" ? "active" : ""}`}
+                  onClick={() => selectAccount("wallet")}
+                >
+                  <span className="emoji">👛</span>
+                  <span className="name">Cüzdanım</span>
+                </button>
+              ) : (
+                <AsyncButton
+                  className="acct connect"
+                  title="Freighter, xBull, Lobstr ve diğer Stellar cüzdanları"
+                  onClick={async () => {
+                    try {
+                      const w = await connectWallet();
+                      setWallet(w);
+                      selectAccount("wallet");
+                      toast("ok", `Cüzdan bağlandı: ${short(w.address)}`);
+                    } catch (e) {
+                      toast("err", friendlyError(e));
+                    }
+                  }}
+                >
+                  <span className="emoji">👛</span>
+                  <span className="name">Cüzdan bağla</span>
+                </AsyncButton>
+              )}
+            </div>
+          </div>
+
+          <div className="balance-card">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="label">Bakiye</span>
+              <span className="who small">{signer ? nameOf(signer.address) : "—"}</span>
+            </div>
+            <div className="big">
+              {balances?.usdc != null ? Number(balances.usdc).toFixed(2) : "0.00"}
+              <small>USDC</small>
+            </div>
+            <div className="try">{tryValue !== null ? `≈ ₺${tryValue.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}` : " "}</div>
+            {needsSetup ? (
+              <AsyncButton className="btn" onClick={prepareAll}>
+                Demo hesaplarını hazırla
+              </AsyncButton>
+            ) : (
+              <div className="foot">
+                {signer && (
+                  <a className="mono" href={expertAccount(signer.address)} target="_blank" rel="noreferrer">
+                    {short(signer.address)} ↗
+                  </a>
+                )}
+                <span>· {balances?.funded ? Number(balances.xlm).toFixed(0) : "0"} XLM</span>
+                <div className="spacer" />
+                <AsyncButton className="btn ghost sm" onClick={prepareAll} title="Tüm demo hesaplarını fonla ve trustline aç">
+                  Hazırla
+                </AsyncButton>
+                <AsyncButton className="btn ghost sm" onClick={refreshBalances} title="Bakiyeyi yenile">
+                  ↻
+                </AsyncButton>
+                {activeKey === "wallet" && wallet && (
+                  <button
+                    className="btn ghost sm"
+                    onClick={async () => {
+                      await disconnectWallet().catch(() => {});
+                      setWallet(null);
+                      selectAccount("contractor");
+                    }}
+                  >
+                    Çıkış
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </header>
+      </div>
 
       <main className="shell">
-        <div className="accounts" role="radiogroup" aria-label="Aktif hesap">
-          {DEMO_ROLES.map((r) => (
-            <button
-              key={r.key}
-              role="radio"
-              aria-checked={activeKey === r.key}
-              className={`acct ${activeKey === r.key ? "active" : ""}`}
-              onClick={() => selectAccount(r.key)}
-              title={r.hint}
-              aria-label={`${r.label}: ${r.hint}`}
-            >
-              <span className="emoji">{r.emoji}</span>
-              <span>
-                <div className="name">{r.label}</div>
-                <div className="addr mono">{short(demo[r.key].address)}</div>
-              </span>
-            </button>
-          ))}
-          {wallet ? (
-            <button
-              role="radio"
-              aria-checked={activeKey === "wallet"}
-              className={`acct ${activeKey === "wallet" ? "active" : ""}`}
-              onClick={() => selectAccount("wallet")}
-            >
-              <span className="emoji">👛</span>
-              <span>
-                <div className="name">Cüzdanım</div>
-                <div className="addr mono">{short(wallet.address)}</div>
-              </span>
-            </button>
-          ) : (
-            <AsyncButton
-              className="acct"
-              onClick={async () => {
-                try {
-                  const w = await connectWallet();
-                  setWallet(w);
-                  selectAccount("wallet");
-                  toast("ok", `Cüzdan bağlandı: ${short(w.address)}`);
-                } catch (e) {
-                  toast("err", friendlyError(e));
-                }
-              }}
-            >
-              <span className="emoji">👛</span>
-              <span>
-                <div className="name">Cüzdan bağla</div>
-                <div className="addr">Freighter, xBull, Lobstr…</div>
-              </span>
-            </AsyncButton>
-          )}
-        </div>
-
-        <div className="balance-bar">
-          <div>
-            <div className="label">Aktif hesap</div>
-            <div style={{ fontWeight: 700 }}>{signer ? nameOf(signer.address) : "—"}</div>
-            {signer && (
-              <a className="mono small" href={expertAccount(signer.address)} target="_blank" rel="noreferrer">
-                {short(signer.address)} ↗
-              </a>
-            )}
-          </div>
-          <div>
-            <div className="label">USDC</div>
-            <div className="big">{balances?.usdc != null ? Number(balances.usdc).toFixed(2) : "—"}</div>
-            {balances?.usdc != null && tryPerUsdc && (
-              <div className="small muted">≈ ₺{(Number(balances.usdc) * tryPerUsdc).toFixed(2)}</div>
-            )}
-          </div>
-          <div>
-            <div className="label">XLM (işlem ücreti)</div>
-            <div className="big">{balances?.funded ? Number(balances.xlm).toFixed(0) : "—"}</div>
-          </div>
-          <div className="spacer" />
-          {needsSetup && <span className="badge warn">Hesap hazır değil</span>}
-          <AsyncButton className={needsSetup ? "btn" : "btn secondary sm"} onClick={prepareAll}>
-            {needsSetup ? "Demo hesaplarını hazırla" : "Hesapları yenile"}
-          </AsyncButton>
-          <AsyncButton className="btn ghost sm" onClick={refreshBalances}>
-            ↻
-          </AsyncButton>
-          {activeKey === "wallet" && wallet && (
-            <button
-              className="btn ghost sm"
-              onClick={async () => {
-                await disconnectWallet().catch(() => {});
-                setWallet(null);
-                selectAccount("contractor");
-              }}
-            >
-              Bağlantıyı kes
-            </button>
-          )}
-        </div>
-
         <nav className="tabs" role="tablist">
           {(
             [
               ["jobs", "İşler"],
-              ["create", "Yeni iş oluştur"],
+              ["create", "Yeni iş"],
               ["ramp", "TL ⇄ USDC"],
             ] as [Tab, string][]
           ).map(([k, label]) => (
@@ -236,6 +233,13 @@ export default function App() {
         {tab === "jobs" && <Jobs />}
         {tab === "create" && <CreateJob />}
         {tab === "ramp" && <Ramp />}
+
+        <footer className="small muted" style={{ marginTop: 48, textAlign: "center" }}>
+          Para Ek İşler'de değil, her iş için açılan Trustless Work escrow'unda durur ·{" "}
+          <a href={expertAccount(CONTRACT_ID)} target="_blank" rel="noreferrer">
+            Ek İşler kontratı ↗
+          </a>
+        </footer>
       </main>
     </AppCtx.Provider>
   );

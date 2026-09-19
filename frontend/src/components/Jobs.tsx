@@ -67,21 +67,40 @@ export function Jobs() {
   return (
     <div className="stack">
       <div className="hero">
-        <h1>Para aracıda değil, akıllı sözleşmede.</h1>
-        <p>
-          <b>Kod 1:</b> çalışan gelince işverenin kodunu okutur, kaporası anında yatar. <b>Kod 2:</b> işverene "hâlâ burada mı?" diye
-          sorulur, evet derse mesai payı ödenir. <b>Gün sonu QR'ı</b> kalan payı öder. Kod 1'den itibaren konum cihazda izlenir; alandan
-          çıkılırsa işverene bildirim gider. Para her an Trustless Work escrow'unda durur.
-        </p>
+        <span className="eyebrow">Emeğin, kodla güvence altında</span>
+        <h1>Para aracıda değil, escrow'da.</h1>
       </div>
-      <div className="row">
-        <label className="row small" style={{ gap: 6 }}>
+      <div className="steps4">
+        <div className="step4">
+          <span className="tag">KOD 1</span>
+          <span className="title">Varış</span>
+          <span className="desc">Çalışan işverenin kodunu okutur, kapora anında yatar.</span>
+        </div>
+        <div className="step4">
+          <span className="tag">KOD 2</span>
+          <span className="title">Devam kontrolü</span>
+          <span className="desc">İşveren "hâlâ burada" der, mesai payı ödenir.</span>
+        </div>
+        <div className="step4 final">
+          <span className="tag">QR</span>
+          <span className="title">Gün sonu</span>
+          <span className="desc">Son QR okutulur, payın tamamı çalışanda.</span>
+        </div>
+        <div className="step4 dark">
+          <span className="tag">KONUM</span>
+          <span className="title">Sahada takip</span>
+          <span className="desc">Alandan çıkılırsa işverene bildirim gider.</span>
+        </div>
+      </div>
+      <div className="row" style={{ marginTop: 10 }}>
+        <span className="section-title">İşler</span>
+        <label className="row small muted" style={{ gap: 6, marginLeft: 8 }}>
           <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
-          Sadece aktif hesabın dahil olduğu işler
+          yalnızca benimkiler
         </label>
         <div className="spacer" />
-        <AsyncButton className="btn secondary sm" onClick={load}>
-          Yenile
+        <AsyncButton className="btn ghost sm" onClick={load}>
+          ↻ Yenile
         </AsyncButton>
         <button className="btn sm" onClick={() => goTo("create")}>
           + Yeni iş
@@ -167,11 +186,11 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
   };
 
   return (
-    <article className="card">
+    <article className={`card job s${job.status}`}>
       <div className="job-head">
         <div>
           <div className="row" style={{ gap: 8 }}>
-            <span className="muted small">İş #{String(job.id)}</span>
+            <span className="job-id">#{String(job.id)}</span>
             <span
               className={`badge ${
                 job.status === JobStatus.Completed ? "ok" : job.status === JobStatus.Refunded ? "err" : job.status === JobStatus.Funded ? "primary" : "warn"
@@ -179,42 +198,36 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
             >
               {STATUS_LABEL[job.status]}
             </span>
-            {isClient && <span className="badge">İşverensin</span>}
-            {isContractor && <span className="badge">İhalecisin</span>}
-            {isWorker && <span className="badge">Çalışansın</span>}
-            {isArbiter && <span className="badge">Hakemsin</span>}
+            <span className="small muted">
+              {isClient ? "işverensin" : isContractor ? "ihalecisin" : isWorker ? "çalışansın" : isArbiter ? "hakemsin" : ""}
+            </span>
           </div>
-          <div className="job-amount">{total} USDC</div>
+          <div className="job-amount">
+            {total}
+            <small>USDC</small>
+          </div>
           {tryPerUsdc && <div className="small muted">≈ ₺{(Number(total) * tryPerUsdc).toLocaleString("tr-TR", { maximumFractionDigits: 0 })}</div>}
         </div>
-        <div className="small" style={{ textAlign: "right" }}>
-          <div className="muted">İşveren</div>
-          <div style={{ fontWeight: 600 }}>{nameOf(t.client)}</div>
-          <div className="muted" style={{ marginTop: 6 }}>
+        <div className="job-side">
+          <span className="k">İşveren</span>
+          <span className="v">{nameOf(t.client)}</span>
+          <span className="k" style={{ marginTop: 6 }}>
             Son tarih
-          </div>
-          <div style={{ fontWeight: 600 }}>
+          </span>
+          <span className="v" style={{ color: deadlinePassed && job.status === JobStatus.Funded ? "var(--warn)" : undefined }}>
             {deadline.toLocaleString("tr-TR", { dateStyle: "medium", timeStyle: "short" })}
-            {deadlinePassed && job.status === JobStatus.Funded && <span className="badge warn" style={{ marginLeft: 6 }}>doldu</span>}
-          </div>
+          </span>
         </div>
       </div>
 
-      <div className="row small" style={{ gap: 8, marginTop: 10 }}>
-        <span className="badge">Kapora %{t.arrival_bps / 100}</span>
-        <span className="badge">Mesai ortası %{t.mid_bps / 100}</span>
-        <span className="badge">Bitiş %100</span>
-        <a
-          className="badge"
-          href={`https://www.openstreetmap.org/?mlat=${venue.lat}&mlon=${venue.lng}#map=17/${venue.lat}/${venue.lng}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          📍 Etkinlik noktası · {t.radius_m} m
-        </a>
-        <span className="badge">Hakem: {nameOf(t.arbiter)}</span>
-        <a className="badge primary" href={twViewer(job.escrow)} target="_blank" rel="noreferrer" title="Para Ek İşler'de değil, bu işin Trustless Work escrow'unda duruyor">
-          🔒 Trustless Work escrow ↗
+      <div className="small muted" style={{ marginTop: 12, lineHeight: 1.6 }}>
+        Kapora %{t.arrival_bps / 100} · Kod 2 ile %{t.mid_bps / 100} · Hakem {nameOf(t.arbiter)} ·{" "}
+        <a href={`https://www.openstreetmap.org/?mlat=${venue.lat}&mlon=${venue.lng}#map=17/${venue.lat}/${venue.lng}`} target="_blank" rel="noreferrer">
+          konum ({t.radius_m} m)
+        </a>{" "}
+        ·{" "}
+        <a href={twViewer(job.escrow)} target="_blank" rel="noreferrer" title="Para Ek İşler'de değil, bu işin Trustless Work escrow'unda duruyor">
+          Trustless Work escrow ↗
         </a>
       </div>
 
@@ -236,29 +249,39 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
           return (
             <div key={s.address} className={`stake ${s.address === me ? "me" : ""}`}>
               <div>
-                <div style={{ fontWeight: 600 }}>
+                <div className="who">
                   {nameOf(s.address)}
-                  {contractorRow && <span className="muted small"> · ihaleci</span>}
+                  {contractorRow && <span className="muted small" style={{ fontWeight: 500 }}> · ihaleci</span>}
                 </div>
-                <div className="small muted">
-                  %{(s.share_bps / 100).toLocaleString("tr-TR")} · ödenen {fromUnits(s.paid)} / {fromUnits(shareOf(job, s))} USDC
+                <div className="paybar" aria-label={`Ödenen ${fromUnits(s.paid)} / ${fromUnits(shareOf(job, s))} USDC`}>
+                  <span style={{ width: `${Math.min(100, Number((s.paid * 100n) / (shareOf(job, s) || 1n)))}%` }} />
                 </div>
               </div>
-              <div className="row" style={{ gap: 4 }}>
+              <div className="small muted" style={{ textAlign: "right" }}>
                 {!contractorRow &&
                   TRANCHE_SHORT.map((l, i) => (
                     <span
                       key={l}
-                      className={`badge ${isReleased(s, i) ? "ok" : isDisputed(s, i) ? "err" : ""}`}
                       title={isDisputed(s, i) ? `${TRANCHE_LABELS[i]}: Trustless Work'te hakemde` : TRANCHE_LABELS[i]}
+                      style={{
+                        marginLeft: 10,
+                        color: isReleased(s, i) ? "var(--ok)" : isDisputed(s, i) ? "var(--err)" : undefined,
+                        fontWeight: isReleased(s, i) || isDisputed(s, i) ? 700 : 400,
+                      }}
                     >
-                      {isReleased(s, i) ? "✓ " : isDisputed(s, i) ? "⚖️ " : ""}
-                      {l}
+                      {isReleased(s, i) ? "✓" : isDisputed(s, i) ? "⚖" : "○"} {l}
                     </span>
                   ))}
-                {contractorRow && isDisputed(s, 0) && <span className="badge err">⚖️ hakemde</span>}
+                {contractorRow && isDisputed(s, 0) && <span style={{ color: "var(--err)", fontWeight: 700 }}>⚖ hakemde</span>}
               </div>
-              <div>{s.accepted ? <span className="badge ok">✓ onayladı</span> : <span className="badge warn">bekliyor</span>}</div>
+              <div style={{ textAlign: "right", minWidth: 120 }}>
+                <div style={{ fontWeight: 700 }}>
+                  {fromUnits(s.paid)} <span className="muted small">/ {fromUnits(shareOf(job, s))}</span>
+                </div>
+                <div className="small muted">
+                  %{(s.share_bps / 100).toLocaleString("tr-TR")} pay{!s.accepted && <span style={{ color: "var(--warn)" }}> · onay bekliyor</span>}
+                </div>
+              </div>
             </div>
           );
         })}
