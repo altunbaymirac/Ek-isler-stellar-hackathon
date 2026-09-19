@@ -13,6 +13,7 @@
     "@creit.tech/stellar-wallets-kit": "^2.6.0",
     "@stellar/stellar-sdk": "^17.1.0",
     "jsqr": "^1.4.0",
+    "lucide-react": "^1.47.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

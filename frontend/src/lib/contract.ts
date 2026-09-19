@@ -2,6 +2,7 @@ import { Buffer } from "buffer";
 import { contract } from "@stellar/stellar-sdk";
 import { codeBytes } from "./codes.ts";
 import { CONTRACT_ID, NETWORK_PASSPHRASE, RPC_URL, USDC_DECIMALS, USDC_SAC } from "./config.ts";
+import { L } from "./i18n.ts";
 import type { Signer } from "./signer.ts";
 
 /** Kontrattaki JobStatus ile birebir */
@@ -22,6 +23,17 @@ export const STATUS_LABEL: Record<number, string> = {
   4: "İptal edildi",
   5: "Kapanış sürüyor",
 };
+
+const STATUS_EN: Record<number, string> = {
+  0: "Waiting for worker approval",
+  1: "Approved · waiting for funding",
+  2: "In Trustless Work escrow · job in progress",
+  3: "Closed",
+  4: "Cancelled",
+  5: "Closing",
+};
+
+export const statusLabel = (s: number) => L(STATUS_LABEL[s], STATUS_EN[s]);
 
 export interface Stakeholder {
   address: string;
@@ -81,37 +93,40 @@ export interface Job {
   close_mode: number;
 }
 
-const ERRORS: Record<number, string> = {
-  1: "İş bulunamadı",
-  2: "Paylar geçersiz (toplam %100 olmalı, her pay > 0)",
-  3: "Tüm çalışanlar henüz payını onaylamadı",
-  4: "Yetkisiz işlem",
-  5: "Bu işlem işin mevcut durumunda yapılamaz",
-  6: "Tutar sıfırdan büyük olmalı",
-  7: "Bu adres bu işte paydaş değil",
-  8: "Aynı adres iki kez eklenmiş",
-  9: "Son tarih gelecekte olmalı",
-  10: "Son tarih henüz gelmedi",
-  11: "Bu çalışan zaten gelmiş olarak işaretlendi",
-  12: "Hakem; müşteri, ihaleci ya da çalışanlardan biri olamaz",
-  13: "Kod hash'leri eksik: her çalışan için Kod 1 ve gün sonu QR'ı gerekli",
-  14: "Kod geçersiz: bu çalışan için üretilmemiş",
-  15: "Geçersiz kod türü",
-  16: "Bu payın ödemesi zaten yapıldı",
-  17: "Çok fazla çalışan: Trustless Work escrow'u en fazla 50 milestone alır",
-  18: "İhaleci henüz saha kodlarını oluşturmadı",
-  19: "Kod 2 yoklama penceresi açık değil (çalışma saatlerinin ortasında 15 dakika açılır)",
-  20: "Çalışma saatleri geçersiz: başlangıç < bitiş olmalı ve bitiş son tarihi geçmemeli",
+const ERRORS: Record<number, [string, string]> = {
+  1: ["İş bulunamadı", "Job not found"],
+  2: ["Paylar geçersiz (toplam %100 olmalı, her pay > 0)", "Invalid shares (must total 100%, each > 0)"],
+  3: ["Tüm çalışanlar henüz payını onaylamadı", "Not every worker has accepted their share yet"],
+  4: ["Yetkisiz işlem", "Not authorized"],
+  5: ["Bu işlem işin mevcut durumunda yapılamaz", "Not allowed in the job's current state"],
+  6: ["Tutar sıfırdan büyük olmalı", "Amount must be greater than zero"],
+  7: ["Bu adres bu işte paydaş değil", "This address is not a stakeholder in this job"],
+  8: ["Aynı adres iki kez eklenmiş", "The same address was added twice"],
+  9: ["Son tarih gelecekte olmalı", "Deadline must be in the future"],
+  10: ["Son tarih henüz gelmedi", "The deadline has not passed yet"],
+  11: ["Bu çalışan zaten gelmiş olarak işaretlendi", "This worker is already marked as arrived"],
+  12: ["Hakem; müşteri, ihaleci ya da çalışanlardan biri olamaz", "The arbiter cannot be the employer, contractor or a worker"],
+  13: ["Kod hash'leri eksik: her çalışan için Kod 1 ve gün sonu QR'ı gerekli", "Code commitments missing: every worker needs Code 1 and an end-of-day QR"],
+  14: ["Kod geçersiz: bu çalışan için üretilmemiş", "Invalid code: not issued for this worker"],
+  15: ["Geçersiz kod türü", "Invalid code type"],
+  16: ["Bu payın ödemesi zaten yapıldı", "This share was already paid"],
+  17: ["Çok fazla çalışan: Trustless Work escrow'u en fazla 50 milestone alır", "Too many workers: a Trustless Work escrow takes at most 50 milestones"],
+  18: ["İhaleci henüz saha kodlarını oluşturmadı", "The contractor hasn't created the on-site codes yet"],
+  19: ["Kod 2 yoklama penceresi açık değil (çalışma saatlerinin ortasında 15 dakika açılır)", "The Code 2 roll-call window isn't open (it opens for 15 minutes in the middle of working hours)"],
+  20: ["Çalışma saatleri geçersiz: başlangıç < bitiş olmalı ve bitiş son tarihi geçmemeli", "Invalid working hours: start must be before end, and end can't be after the deadline"],
 };
 
 export function friendlyError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   const m = msg.match(/Error\(Contract, #(\d+)\)/);
-  if (m) return ERRORS[Number(m[1])] ?? `Kontrat hatası #${m[1]}`;
-  if (/trustline|TrustLine|trust line/i.test(msg)) return "Alıcı hesapta USDC trustline yok";
-  if (/balance|insufficient|underfunded/i.test(msg)) return "Yetersiz USDC bakiyesi";
-  if (/rejected|declined|cancel/i.test(msg)) return "İmza reddedildi";
-  if (/geolocation|User denied/i.test(msg)) return "Konum izni verilmedi";
+  if (m) {
+    const pair = ERRORS[Number(m[1])];
+    return pair ? L(...pair) : L(`Kontrat hatası #${m[1]}`, `Contract error #${m[1]}`);
+  }
+  if (/trustline|TrustLine|trust line/i.test(msg)) return L("Alıcı hesapta USDC trustline yok", "The receiving account has no USDC trustline");
+  if (/balance|insufficient|underfunded/i.test(msg)) return L("Yetersiz USDC bakiyesi", "Insufficient USDC balance");
+  if (/rejected|declined|cancel/i.test(msg)) return L("İmza reddedildi", "Signature was rejected");
+  if (/geolocation|User denied/i.test(msg)) return L("Konum izni verilmedi", "Location permission was denied");
   return msg.length > 220 ? msg.slice(0, 220) + "…" : msg;
 }
 
@@ -157,6 +172,10 @@ async function invoke<T>(signer: Signer, method: string, args: object): Promise<
   const tx = await c[method](args);
   const sent = await tx.signAndSend();
   const hash = sent.sendTransactionResponse?.hash ?? sent.getTransactionResponse?.txHash;
+  const status = sent.getTransactionResponse?.status;
+  if (status && status !== "SUCCESS") {
+    throw new Error(`${L("İşlem ağda başarısız oldu", "Transaction failed on the network")} (${status})${hash ? ` · tx ${hash}` : ""}`);
+  }
   return { result: unwrap<T>(sent.result), hash };
 }
 

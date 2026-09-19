@@ -1,5 +1,6 @@
 import { Keypair } from "@stellar/stellar-sdk";
 import { NETWORK_PASSPHRASE } from "./config.ts";
+import { getLang } from "./i18n.ts";
 import { keypairSigner, type Signer } from "./signer.ts";
 
 // ---- Stellar Wallets Kit (Freighter, xBull, Lobstr, Albedo, Hana, …) ----
@@ -51,18 +52,20 @@ function walletSigner(address: string): Signer {
 // ---- Demo hesapları (yalnızca testnet, anahtarlar bu tarayıcıda saklanır) ----
 export interface DemoRole {
   key: string;
-  label: string;
-  emoji: string;
-  hint: string;
+  tr: { label: string; hint: string };
+  en: { label: string; hint: string };
 }
 
 export const DEMO_ROLES: DemoRole[] = [
-  { key: "client", label: "Müşteri", emoji: "🏢", hint: "Etkinliği düzenleyen şirket, parayı öder" },
-  { key: "contractor", label: "İhaleci", emoji: "🧑‍💼", hint: "İşi alan taşeron lideri" },
-  { key: "w1", label: "Japonca Tercüman", emoji: "🇯🇵", hint: "Alt çalışan" },
-  { key: "w2", label: "İspanyolca Tercüman", emoji: "🇪🇸", hint: "Alt çalışan" },
-  { key: "arbiter", label: "Hakem", emoji: "⚖️", hint: "Konum anlaşmazlıklarında karar veren platform hakemi" },
+  { key: "client", tr: { label: "İşveren", hint: "Parayı escrow'a kilitler, işi kapatır" }, en: { label: "Employer", hint: "Locks the money in escrow, closes the job" } },
+  { key: "contractor", tr: { label: "İhaleci", hint: "İşi tanımlar, sahada kodları verir" }, en: { label: "Contractor", hint: "Defines the job, hands out codes on site" } },
+  { key: "w1", tr: { label: "İtalyanca Çevirmen", hint: "Kodu girer, QR ile payını alır" }, en: { label: "Italian Interpreter", hint: "Enters the code, gets paid by QR" } },
+  { key: "w2", tr: { label: "Kameraman", hint: "Kodu girer, QR ile payını alır" }, en: { label: "Camera Operator", hint: "Enters the code, gets paid by QR" } },
+  { key: "w3", tr: { label: "Fotoğrafçı", hint: "Kodu girer, QR ile payını alır" }, en: { label: "Photographer", hint: "Enters the code, gets paid by QR" } },
+  { key: "arbiter", tr: { label: "Hakem", hint: "Anlaşmazlıkta karar verir" }, en: { label: "Arbiter", hint: "Decides disputes" } },
 ];
+
+export const roleText = (r: DemoRole) => (getLang() === "en" ? r.en : r.tr);
 
 const LS_KEY = "ekisler.demo.v1";
 
@@ -84,7 +87,7 @@ export function loadDemoSigners(): Record<string, Signer> {
       secrets[r.key] = kp.secret();
       changed = true;
     }
-    out[r.key] = keypairSigner(kp, r.label);
+    out[r.key] = keypairSigner(kp, r.tr.label);
   }
   if (changed) {
     try {

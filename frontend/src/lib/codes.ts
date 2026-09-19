@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import { CONTRACT_ID } from "./config.ts";
+import { L } from "./i18n.ts";
 
 /**
  * Saha kodları. İki tür var ve ikisi bilerek farklı biçimde:
@@ -28,6 +29,7 @@ export const CODES = 2;
 
 export const CODE_LABELS = ["Kod 1 · varış (elden verilir)", "Gün sonu QR · ödeme"] as const;
 export const CODE_SHORT = ["Kod 1", "Gün sonu QR"] as const;
+export const codeLabel = (k: number) => L(CODE_LABELS[k], ["Code 1 · arrival (given in person)", "End-of-day QR · payment"][k]);
 
 const key = (jobId: bigint | number) => `ekisler.codes.${CONTRACT_ID}.${jobId}`;
 

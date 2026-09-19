@@ -1,16 +1,9 @@
 import jsQR from "jsqr";
+import { RefreshCw, SwitchCamera, TriangleAlert, X } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  cameraMessage,
-  cameraPermission,
-  cameraProblem,
-  listCameras,
-  openCamera,
-  stopStream,
-  type CameraDevice,
-  type CameraProblem,
-} from "../lib/camera.ts";
+import { cameraMessage, cameraPermission, cameraProblem, listCameras, openCamera, stopStream, type CameraDevice, type CameraProblem } from "../lib/camera.ts";
+import { L } from "../lib/i18n.ts";
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
@@ -24,8 +17,8 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         <div className="row">
           <h3 style={{ margin: 0 }}>{title}</h3>
           <div className="spacer" />
-          <button className="btn ghost sm" onClick={onClose} aria-label="Kapat">
-            ✕
+          <button className="btn ghost sm icon" onClick={onClose} aria-label={L("Kapat", "Close")}>
+            <X size={18} />
           </button>
         </div>
         {children}
@@ -40,7 +33,7 @@ export function QrImage({ text, size = 280 }: { text: string; size?: number }) {
     QRCode.toDataURL(text, { width: size, margin: 1, errorCorrectionLevel: "M" }).then(setUrl);
   }, [text, size]);
   return url ? (
-    <img src={url} width={size} height={size} alt="Ödeme dilimi QR kodu" style={{ display: "block", margin: "0 auto", borderRadius: 12 }} />
+    <img src={url} width={size} height={size} alt={L("Ödeme QR kodu", "Payment QR code")} style={{ display: "block", margin: "0 auto", borderRadius: 12 }} />
   ) : (
     <div style={{ width: size, height: size }} />
   );
@@ -50,14 +43,14 @@ export function QrImage({ text, size = 280 }: { text: string; size?: number }) {
 const SCAN_EDGE = 640;
 
 /**
- * Kamerayla QR okur (jsQR). Kamera açılmazsa nedeni söylenir ve QR metnini elle yapıştırma
- * yolu açık kalır: gün sonu QR'ı parayı aktaran tek adım olduğu için çalışan burada takılıp
- * kalmamalı.
+ * Kamerayla QR okur (jsQR). Kamera açılmazsa nedeni söylenir ve QR metnini elle yapıştırma yolu
+ * açık kalır: QR parayı aktarır, çalışan burada takılıp kalmamalı.
+ * (Kamera katmanı Mehmet Emin'in `arkadas-kodu` dalından.)
  */
 export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  // onResult her render'da yeniden üretiliyor (liste 15 sn'de bir yenileniyor). Bağımlılığa
+  // onResult her render'da yeniden üretiliyor (iş listesi 15 sn'de bir yenileniyor). Bağımlılığa
   // koyarsak kamera sürekli kapanıp açılır; ref'te tutuyoruz.
   const latest = useRef(onResult);
   latest.current = onResult;
@@ -78,8 +71,7 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
       setProblem(null);
       setScanning(false);
       try {
-        // Daha önce reddedilmişse getUserMedia'yı hiç çağırma: tarayıcı sessizce hata verir,
-        // kullanıcı da neden bir şey olmadığını anlamaz.
+        // Daha önce reddedilmişse getUserMedia'yı hiç çağırma: tarayıcı sessizce hata verir.
         if ((await cameraPermission()) === "denied") throw new DOMException("", "NotAllowedError");
 
         stream = await openCamera({ deviceId });
@@ -106,6 +98,7 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
           if (found?.data) {
             done = true;
             cancelAnimationFrame(raf);
+            navigator.vibrate?.(60);
             latest.current(found.data);
           }
         };
@@ -122,7 +115,6 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
     };
   }, [deviceId, attempt]);
 
-  const retry = () => setAttempt((a) => a + 1);
   const nextCam = () => {
     const i = cams.findIndex((c) => c.deviceId === deviceId);
     setDeviceId(cams[(i + 1) % cams.length]?.deviceId);
@@ -132,10 +124,13 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
     <div className="scanner">
       {problem ? (
         <div className="callout warn">
-          <div>⚠️ {cameraMessage(problem)}</div>
+          <div className="row" style={{ gap: 8, flexWrap: "nowrap", alignItems: "flex-start" }}>
+            <TriangleAlert size={18} style={{ flex: "none", marginTop: 1 }} />
+            <span>{cameraMessage(problem)}</span>
+          </div>
           {problem !== "notfound" && problem !== "unsupported" && (
-            <button className="btn sm" style={{ marginTop: 8 }} onClick={retry}>
-              📷 Kamerayı tekrar dene
+            <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setAttempt((a) => a + 1)}>
+              <RefreshCw size={15} /> {L("Kamerayı tekrar dene", "Try the camera again")}
             </button>
           )}
         </div>
@@ -146,38 +141,41 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
             <div className="scanner-frame" />
             {!scanning && (
               <div className="scanner-status">
-                <span className="spinner" /> Kamera açılıyor…
+                <span className="spinner" /> {L("Kamera açılıyor…", "Opening camera…")}
               </div>
             )}
           </div>
           <canvas ref={canvas} style={{ display: "none" }} />
           <div className="row">
             <span className="small muted">
-              {scanning ? "QR aranıyor… ihalecinin ekranındaki kodu çerçeveye al." : "Tarayıcı kamera izni isteyecek."}
+              {scanning
+                ? L("QR aranıyor… ihalecinin ekranındaki kodu çerçeveye al.", "Looking for a QR… fit the code on the contractor's screen in the frame.")
+                : L("Tarayıcı kamera izni isteyecek.", "Your browser will ask for camera permission.")}
             </span>
             <div className="spacer" />
             {cams.length > 1 && (
-              <button className="btn ghost sm" onClick={nextCam} title="Ön/arka kamera">
-                🔄 Kamera değiştir
+              <button className="btn ghost sm" onClick={nextCam}>
+                <SwitchCamera size={16} /> {L("Kamera değiştir", "Switch camera")}
               </button>
             )}
           </div>
         </>
       )}
 
-      <details className="small muted">
-        <summary>Kamera çalışmıyorsa QR metnini yapıştır</summary>
+      <details className="small muted" open={problem !== null}>
+        <summary>{L("Kamera çalışmıyorsa QR metnini yapıştır", "Camera not working? Paste the QR text")}</summary>
         <div className="row" style={{ flexWrap: "nowrap", marginTop: 8 }}>
           <input
-            style={{ flex: 1, fontFamily: "ui-monospace, monospace" }}
+            style={{ flex: 1 }}
+            className="mono"
             placeholder="EKISLER:…"
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && pasted.trim() && latest.current(pasted.trim())}
-            aria-label="QR metni"
+            aria-label={L("QR metni", "QR text")}
           />
           <button className="btn sm" disabled={!pasted.trim()} onClick={() => latest.current(pasted.trim())}>
-            Uygula
+            {L("Gönder", "Submit")}
           </button>
         </div>
       </details>

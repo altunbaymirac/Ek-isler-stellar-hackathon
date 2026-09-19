@@ -1,11 +1,12 @@
 /**
- * Kamera izni ve görüntü akışı.
+ * Kamera izni ve görüntü akışı. (Mehmet Emin'in `arkadas-kodu` dalından alındı.)
  *
- * Kamera iki yerde lazım: çalışan şartları onaylarken izni önceden istemek (saha anında
- * izin penceresiyle uğraşılmasın diye) ve gün sonu QR'ını okuturken gerçek görüntüyü almak.
- * Gün sonu QR'ı parayı hareket ettiren tek adım olduğu için kameranın neden açılmadığı
- * çalışana açıkça söylenmeli; bu yüzden hata türleri ayrıştırılıyor.
+ * Kamera iki yerde lazım: çalışan şartları onaylarken izni önceden istemek (saha anında izin
+ * penceresiyle uğraşılmasın diye) ve sahada QR okuturken gerçek görüntüyü almak. QR parayı
+ * hareket ettirdiği için kameranın neden açılmadığı çalışana açıkça söylenmeli; hata türleri
+ * bu yüzden ayrıştırılıyor.
  */
+import { L } from "./i18n.ts";
 
 export type CameraProblem = "insecure" | "unsupported" | "denied" | "notfound" | "busy" | "unknown";
 
@@ -22,7 +23,6 @@ export class CameraUnavailable extends Error {
 }
 
 /**
- * Tarayıcı kamerayı hiç vermiyor mu, yoksa sayfa güvensiz bir adresten mi açıldı?
  * `getUserMedia` yalnızca güvenli kaynakta (https ya da localhost) tanımlıdır; telefondan
  * `http://192.168.x.x:5173` açılırsa `navigator.mediaDevices` hiç yoktur.
  */
@@ -35,7 +35,7 @@ export function cameraSupport(): "ok" | "insecure" | "unsupported" {
   return "unsupported";
 }
 
-/** İzin penceresi açmadan mevcut durumu okur. Desteklenmiyorsa `unknown` döner. */
+/** İzin penceresi açmadan mevcut durumu okur. */
 export async function cameraPermission(): Promise<CameraState> {
   const support = cameraSupport();
   if (support !== "ok") return support;
@@ -58,19 +58,17 @@ export async function listCameras(): Promise<CameraDevice[]> {
   const devices = await navigator.mediaDevices.enumerateDevices();
   return devices
     .filter((d) => d.kind === "videoinput")
-    .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Kamera ${i + 1}` }));
+    .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `${L("Kamera", "Camera")} ${i + 1}` }));
 }
 
 /**
- * Kamerayı açar. Arka kamera `ideal` olarak istenir: `exact` deseydik yalnızca ön kamerası
- * olan dizüstülerde `OverconstrainedError` alırdık.
+ * Kamerayı açar. Arka kamera `ideal` olarak istenir: `exact` deseydik yalnızca ön kamerası olan
+ * dizüstülerde `OverconstrainedError` alırdık.
  */
 export async function openCamera(opts: { deviceId?: string } = {}): Promise<MediaStream> {
   const support = cameraSupport();
   if (support !== "ok") throw new CameraUnavailable(support);
-  const video: MediaTrackConstraints = opts.deviceId
-    ? { deviceId: { exact: opts.deviceId } }
-    : { facingMode: { ideal: "environment" } };
+  const video: MediaTrackConstraints = opts.deviceId ? { deviceId: { exact: opts.deviceId } } : { facingMode: { ideal: "environment" } };
   video.width = { ideal: 1280 };
   video.height = { ideal: 720 };
   return navigator.mediaDevices.getUserMedia({ video, audio: false });
@@ -81,8 +79,8 @@ export function stopStream(stream: MediaStream | null | undefined) {
 }
 
 /**
- * İzin penceresini önceden açar ve kamerayı hemen kapatır (ışık bir an yanıp söner).
- * Reddedilirse akışı engellemez: çalışan QR'ı daha sonra elle yapıştırabilir.
+ * İzin penceresini önceden açar ve kamerayı hemen kapatır. Reddedilirse akışı engellemez:
+ * çalışan kodu daha sonra elle girebilir.
  */
 export async function requestCameraAccess(): Promise<CameraState> {
   const support = cameraSupport();
@@ -122,16 +120,22 @@ export function cameraProblem(e: unknown): CameraProblem {
 export function cameraMessage(p: CameraProblem): string {
   switch (p) {
     case "denied":
-      return "Kamera izni verilmedi. Adres çubuğundaki 🔒 simgesinden kamerayı açıp tekrar dene.";
+      return L(
+        "Kamera izni verilmedi. Adres çubuğundaki kilit simgesinden kamerayı açıp tekrar dene.",
+        "Camera permission was denied. Allow it from the lock icon in the address bar and try again.",
+      );
     case "notfound":
-      return "Bu cihazda kamera bulunamadı.";
+      return L("Bu cihazda kamera bulunamadı.", "No camera was found on this device.");
     case "busy":
-      return "Kamera başka bir uygulamada açık. Onu kapatıp tekrar dene.";
+      return L("Kamera başka bir uygulamada açık. Onu kapatıp tekrar dene.", "The camera is in use by another app. Close it and try again.");
     case "insecure":
-      return "Sayfa güvenli olmayan bir adresten açıldı. Tarayıcılar kamerayı yalnızca https ya da localhost üzerinde açar.";
+      return L(
+        "Sayfa güvenli olmayan bir adresten açıldı. Tarayıcılar kamerayı yalnızca https ya da localhost üzerinde açar.",
+        "This page was opened over an insecure address. Browsers only allow the camera on https or localhost.",
+      );
     case "unsupported":
-      return "Bu tarayıcı kamera erişimini desteklemiyor.";
+      return L("Bu tarayıcı kamera erişimini desteklemiyor.", "This browser does not support camera access.");
     default:
-      return "Kamera açılamadı.";
+      return L("Kamera açılamadı.", "Could not open the camera.");
   }
 }
