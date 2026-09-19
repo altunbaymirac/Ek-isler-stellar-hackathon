@@ -23,6 +23,12 @@ Weekend e-sports tournaments, festivals, trade fairs, interpreting jobs, stage b
 3. **Trust on site:** The worker shows up and the employer says "you never came". Or the worker never shows up and the employer is left stranded at the last minute.
 4. **Regulatory wall:** In Türkiye, a software company collecting money from clients, holding it in its own pool and distributing it to third parties needs a central bank (TCMB) licence under Law No. 6493.
 
+## Why we built this
+
+This is not a hypothetical. One of us watched their older sister take an Italian interpreting job, deliver it in full, and then wait a very long time to be paid. Nothing was even in dispute: the work was done and both sides agreed on the amount. The money just sat somewhere between the parties, and she had no way to see where it was or to claim it.
+
+That story has not gone away, and it is not specific to Türkiye — short-term workers run into the same wall all over the world. It is the reason we came to Stellar and to a blockchain in the first place. Our goal was never just to move a payment faster; it was to take the trust the two sides are forced to place in each other and put it into code, so that getting paid stops depending on the other party's goodwill.
+
 ## Solution
 
 The money never enters any company's account. It is locked in a **Trustless Work multi-release escrow** opened for each job, and the job's rules are enforced in code by the **Ek İşler Soroban contract**:
@@ -263,6 +269,10 @@ stellar contract deploy --wasm target/wasm32v1-none/release/ek_isler.wasm --sour
 - Stronger location proof: device attestation, multiple witnesses, timed check-ins.
 - Partial arbiter decisions and an appeal period.
 - Mainnet with a real anchor: e-invoice / withholding tax integration.
+- **More professions**: grow the role catalogue well past interpreter and camera operator — waiter, stage crew, security, photographer, translator, technician — so a contractor can staff a whole event from the app.
+- **Reputation scores**: after each job, workers and employers rate one another, on top of what the chain already knows (did the worker arrive, did they answer Code 2, did the employer close the job without a dispute). A visible score separates the reliable worker from the unreliable one and the trustworthy employer from the risky one, so both sides know who they are dealing with before they sign.
+- **Accounts and multi-profession profiles**: sign up, pick the professions you actually work in, and keep more than one. The same person can be an interpreter on Saturday and a camera operator on Sunday, with a separate track record for each profession.
+- **Workers become arbiters**: once a worker has a long clean record, they can opt in as an arbiter for other people's jobs. From there the system feeds itself — the people who proved trustworthy are the ones resolving disputes, and every job that closes cleanly raises the trust level of the whole network.
 
 ## Licence
 
@@ -284,6 +294,12 @@ Hafta sonu e-spor turnuvası, festival, fuar, çeviri işi, sahne kurulumu… Bu
 2. **Gizli oran hilesi:** İhaleci çalışanla sözlü olarak %32'de anlaşır, sisteme habersizce %20 yazar.
 3. **Sahadaki güven:** Çalışan yola çıkar, işveren "gelmedin" der. Ya da çalışan hiç gelmez, işveren son dakikada ortada kalır.
 4. **Regülasyon duvarı:** Bir yazılım şirketinin müşteriden para toplayıp kendi havuzunda tutarak üçüncü kişilere dağıtması, 6493 sayılı kanun kapsamında TCMB lisansı gerektirir.
+
+## Bu işe neden giriştik
+
+Bu kurgu değil. Ekibimizden birinin ablası bir İtalyanca çevirmenlik işi aldı, işi eksiksiz yaptı ve parasını çok uzun süre alamadı. Ortada bir anlaşmazlık bile yoktu: iş bitmişti, tutarda iki taraf da hemfikirdi. Para yalnızca taraflar arasında bir yerde bekledi ve ablasının o paranın nerede olduğunu görmesinin ya da talep etmesinin bir yolu yoktu.
+
+Bu hikâye hâlâ yaşanıyor ve Türkiye'ye özgü de değil; kısa süreli çalışanlar dünyanın her yerinde aynı duvara tosluyor. Stellar'a ve blok zincire yönelmemizin asıl sebebi bu. Amacımız bir ödemeyi hızlandırmak değildi; iki tarafın birbirine mecburen duyduğu güveni koda gömmekti — ki para almak karşı tarafın iyi niyetine bağlı olmaktan çıksın.
 
 ## Çözüm
 
@@ -409,6 +425,10 @@ Kendi kontratını deploy etmek için komutlar [İngilizce bölümdeki Running i
 - Konum kanıtını güçlendirme: cihaz doğrulaması, çoklu tanık, zaman aralıklı check-in.
 - Kısmi hakem kararları ve itiraz süresi.
 - Gerçek anchor ile mainnet: e-fatura / stopaj entegrasyonu.
+- **Daha fazla meslek**: Rol kataloğunu çevirmen ve kameramanın çok ötesine taşımak — garson, sahne ekibi, güvenlik, fotoğrafçı, tercüman, teknisyen — böylece ihaleci bütün etkinliğin ekibini uygulamadan kurabilsin.
+- **Puanlama sistemi**: Her işin sonunda çalışan ve işveren birbirini puanlar; zincirin zaten bildiklerinin üstüne (çalışan geldi mi, Kod 2'ye cevap verildi mi, işveren işi anlaşmazlıksız kapattı mı) eklenir. Görünür bir puan, iyi çalışanı kötüsünden ve güvenilir işvereni riskli olandan ayırır; iki taraf da imzadan önce kiminle çalıştığını bilir.
+- **Hesap açma ve çok mesleklilik**: Kayıt ol, gerçekten yaptığın meslekleri seç ve birden fazlasını tut. Aynı kişi cumartesi çevirmen, pazar kameraman olabilir; her meslek için ayrı bir sicil tutulur.
+- **Çalışanlar hakem olabilir**: Sicili uzun süre temiz kalan bir çalışan, başkalarının işlerinde hakemliğe talip olabilir. Sistem buradan itibaren kendi kendini besler — anlaşmazlıkları çözenler güvenilirliğini kanıtlamış kişiler olur ve temiz kapanan her iş ağın genel güven seviyesini yükseltir.
 
 ## Lisans
 
