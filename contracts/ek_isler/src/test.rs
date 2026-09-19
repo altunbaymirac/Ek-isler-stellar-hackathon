@@ -249,6 +249,47 @@ fn arbiter_releases_deposit_on_location_proof() {
 }
 
 #[test]
+fn employer_presence_check_pays_mid_or_raises_alert() {
+    let env = Env::default();
+    let s = setup(&env);
+    let id = s.funded_job(1_000_000);
+    s.contract.claim(&id, &s.w1, &TRANCHE_ARRIVAL, &s.code(1, 0));
+
+    // Kod 2: işveren "burada değil" → para hareket etmez, çalışana uyarı
+    assert_eq!(s.contract.confirm_presence(&id, &s.w1, &false), 0);
+    let job = s.contract.get_job(&id);
+    assert_eq!(job.alerts.len(), 1);
+    assert_eq!(job.alerts.get(0).unwrap().kind, ALERT_REPORTED_ABSENT);
+    assert_eq!(s.bal(&s.w1), net(64_000));
+
+    // Kod 2: işveren "burada" → mesai dilimi ödenir
+    assert_eq!(s.contract.confirm_presence(&id, &s.w1, &true), 96_000);
+    let signers: std::vec::Vec<Address> = env.auths().into_iter().map(|(a, _)| a).collect();
+    assert!(signers.contains(&s.client));
+    assert_eq!(s.bal(&s.w1), net(64_000) + net(96_000));
+    assert_eq!(
+        s.contract.try_confirm_presence(&id, &s.w1, &true),
+        Err(Ok(Error::AlreadyReleased))
+    );
+}
+
+#[test]
+fn leaving_the_area_raises_alert_for_employer() {
+    let env = Env::default();
+    let s = setup(&env);
+    let id = s.funded_job(1_000_000);
+    let h: BytesN<32> = env.crypto().sha256(&Bytes::from_array(&env, b"okuma")).into();
+
+    s.contract.submit_location(&id, &s.w1, &120, &h); // alan içinde (300 m)
+    assert_eq!(s.contract.get_job(&id).alerts.len(), 0);
+    s.contract.submit_location(&id, &s.w1, &850, &h); // alan dışında
+    let job = s.contract.get_job(&id);
+    assert_eq!(job.alerts.len(), 1);
+    let a = job.alerts.get(0).unwrap();
+    assert_eq!((a.kind, a.distance_m, a.worker), (ALERT_LEFT_AREA, 850, s.w1.clone()));
+}
+
+#[test]
 fn deadline_pays_those_who_showed_up_and_disputes_no_shows() {
     let env = Env::default();
     let s = setup(&env);

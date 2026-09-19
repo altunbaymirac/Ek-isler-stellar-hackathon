@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { twViewer } from "../lib/config.ts";
 import { useApp } from "../app-context.tsx";
 import { commitReading, decodeQr, distanceM, encodeQr, loadCodes, makeCodes, saveCodes, saveReading, TRANCHE_LABELS, TRANCHE_SHORT } from "../lib/codes.ts";
 import {
   acceptJob,
+  ALERT_LEFT_AREA,
+  ALERT_REPORTED_ABSENT,
   arbiterRelease,
   claimTranche,
   completeJob,
+  confirmPresence,
   continueClose,
   depositJob,
   friendlyError,
@@ -66,8 +69,9 @@ export function Jobs() {
       <div className="hero">
         <h1>Para aracıda değil, akıllı sözleşmede.</h1>
         <p>
-          Çalışan sahaya gelince işverenin gösterdiği QR'ı okutur ve kaporası anında hesabına geçer. Mesai ortasında ikinci QR,
-          iş bitince son QR. İşveren kod vermezse çalışanın konumu kanıt olur, hakem kaporayı serbest bırakır.
+          <b>Kod 1:</b> çalışan gelince işverenin kodunu okutur, kaporası anında yatar. <b>Kod 2:</b> işverene "hâlâ burada mı?" diye
+          sorulur, evet derse mesai payı ödenir. <b>Gün sonu QR'ı</b> kalan payı öder. Kod 1'den itibaren konum cihazda izlenir; alandan
+          çıkılırsa işverene bildirim gider. Para her an Trustless Work escrow'unda durur.
         </p>
       </div>
       <div className="row">
@@ -296,7 +300,7 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
         {job.status === JobStatus.Approved && !isClient && <div className="callout">Tüm paylar onaylandı. İşverenin parayı kilitlemesi bekleniyor.</div>}
       </div>
 
-      {signer && job.status === JobStatus.Funded && isClient && <ClientCodes job={job} />}
+      {signer && job.status === JobStatus.Funded && isClient && <ClientCodes job={job} signer={signer} run={run} />}
       {signer && job.status === JobStatus.Funded && isWorker && myStake && (
         <WorkerPanel job={job} me={myStake} signer={signer} run={run} venue={venue} />
       )}
@@ -363,47 +367,161 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
   );
 }
 
-/** İşverenin sahada göstereceği QR kodları */
-function ClientCodes({ job }: { job: Job }) {
+const hhmm = (ts: bigint) => new Date(Number(ts) * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+const lastAlert = (job: Job, worker: string, kind: number) =>
+  [...job.alerts].reverse().find((a) => a.worker === worker && a.kind === kind);
+
+/** İşveren saha paneli: Kod 1 (varış QR'ı), Kod 2 (hâlâ burada mı?), gün sonu QR'ı ve alan dışı bildirimleri */
+function ClientCodes({ job, signer, run }: { job: Job; signer: Signer; run: ReturnType<typeof useRun> }) {
   const { nameOf } = useApp();
   const codes = loadCodes(job.id);
   const [open, setOpen] = useState<{ idx: number; tranche: number } | null>(null);
   const workers = job.stakeholders.map((s, idx) => ({ s, idx })).filter(({ s }) => s.address !== job.contractor);
-
-  if (!codes)
-    return (
-      <div className="callout warn" style={{ marginTop: 14 }}>
-        Bu işin QR kodları bu cihazda değil; kodlar parayı kilitleyen cihazda üretildi. İşi yine de "İşi kapat" ile tamamlayabilirsin.
-      </div>
-    );
-
   const openItem = open && workers.find((w) => w.idx === open.idx);
+
   return (
     <div className="panel">
-      <div className="panel-title">📱 Saha QR kodları · çalışan okutunca dilim anında ödenir</div>
-      {workers.map(({ s, idx }) => (
-        <div key={s.address} className="row" style={{ justifyContent: "space-between" }}>
-          <span style={{ fontWeight: 600 }}>{nameOf(s.address)}</span>
-          <span className="row" style={{ gap: 6 }}>
-            {TRANCHE_SHORT.map((l, t) => (
-              <button key={l} className="btn secondary sm" disabled={isReleased(s, t)} onClick={() => setOpen({ idx, tranche: t })}>
-                {isReleased(s, t) ? `✓ ${l}` : `${l} QR`}
-              </button>
-            ))}
-          </span>
+      <div className="panel-title">📱 Saha kontrolü · her adım çalışana anında ödeme açar</div>
+      {!codes && (
+        <div className="callout warn small">
+          Kod 1 ve gün sonu QR'ı parayı kilitleyen cihazda üretildi, bu cihazda yok. Kod 2 onayı ve işi kapatma yine çalışır.
         </div>
-      ))}
-      {open && openItem && (
+      )}
+      {workers.map(({ s, idx }) => {
+        const left = lastAlert(job, s.address, ALERT_LEFT_AREA);
+        return (
+          <div key={s.address} className="stack" style={{ gap: 6, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 600 }}>{nameOf(s.address)}</span>
+              <span className="row" style={{ gap: 6 }}>
+                <button className="btn secondary sm" disabled={!codes || isReleased(s, 0)} onClick={() => setOpen({ idx, tranche: 0 })}>
+                  {isReleased(s, 0) ? "✓ Kod 1" : "Kod 1 · Varış QR"}
+                </button>
+                <button className="btn secondary sm" disabled={!codes || isReleased(s, 2)} onClick={() => setOpen({ idx, tranche: 2 })}>
+                  {isReleased(s, 2) ? "✓ Gün sonu" : "Gün sonu QR"}
+                </button>
+              </span>
+            </div>
+            {isReleased(s, 0) && !isReleased(s, 1) && (
+              <div className="row small">
+                <span>
+                  <b>Kod 2</b> · {nameOf(s.address)} hâlâ iş yerinde mi?
+                </span>
+                <AsyncButton
+                  className="btn ok sm"
+                  onClick={() => run("Kod 2 onaylandı, mesai ödemesi gönderildi", () => confirmPresence(signer, job.id, s.address, true))}
+                >
+                  Evet, burada
+                </AsyncButton>
+                <AsyncButton
+                  className="btn secondary sm"
+                  onClick={() =>
+                    run("Çalışana \"iş yerinde değil\" bildirimi gönderildi", () => confirmPresence(signer, job.id, s.address, false))
+                  }
+                >
+                  Hayır, burada değil
+                </AsyncButton>
+              </div>
+            )}
+            {isReleased(s, 1) && <span className="small muted">✓ Kod 2 onaylandı</span>}
+            {left && !isReleased(s, 2) && (
+              <div className="callout warn small" role="alert">
+                ⚠️ {hhmm(left.timestamp)} · {nameOf(s.address)} etkinlik alanından çıktı (etkinliğe {left.distance_m} m)
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {open && openItem && codes && (
         <Modal title={`${TRANCHE_LABELS[open.tranche]} · ${nameOf(openItem.s.address)}`} onClose={() => setOpen(null)}>
           <QrImage text={encodeQr({ jobId: job.id, tranche: open.tranche, worker: openItem.s.address, code: codes[open.idx * 3 + open.tranche] })} />
           <p className="small muted" style={{ textAlign: "center", margin: 0 }}>
             Okutulunca çalışanın ödenen tutarı {fromUnits(trancheTarget(job, openItem.s, open.tranche))} USDC'ye çıkar.
             <br />
-            Bu QR'ı sadece çalışan yanındayken göster.
+            Bu kodu sadece çalışan yanındayken göster.
           </p>
         </Modal>
       )}
     </div>
+  );
+}
+
+/** Kod 1'den gün sonu QR'ına kadar konum takibi: cihazda yapılır, yalnızca alandan çıkış zincire yazılır */
+function LocationTracker({
+  job,
+  me,
+  signer,
+  run,
+  venue,
+}: {
+  job: Job;
+  me: Stakeholder;
+  signer: Signer;
+  run: ReturnType<typeof useRun>;
+  venue: { lat: number; lng: number };
+}) {
+  const toast = useToast();
+  const [on, setOn] = useState(false);
+  const [dist, setDist] = useState<number | null>(null);
+  const inside = useRef<boolean | null>(null);
+  const radius = job.terms.radius_m;
+
+  const report = useCallback(
+    (d: number, lat: number, lng: number) =>
+      run(`Alandan çıkış işverene bildirildi (${d} m)`, async () => {
+        const { reading, hash } = await commitReading({ lat, lng, at: Date.now() });
+        saveReading(job.id, me.address, reading);
+        return submitLocation(signer, job.id, d, hash);
+      }),
+    [run, job.id, me.address, signer],
+  );
+
+  useEffect(() => {
+    if (!on) return;
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        const d = Math.round(distanceM(p.coords.latitude, p.coords.longitude, venue.lat, venue.lng));
+        setDist(d);
+        const nowInside = d <= radius;
+        if (inside.current !== false && !nowInside) report(d, p.coords.latitude, p.coords.longitude);
+        inside.current = nowInside;
+      },
+      (e) => {
+        toast("err", friendlyError(new Error(e.message || "geolocation")));
+        setOn(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 15_000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [on, venue.lat, venue.lng, radius, report, toast]);
+
+  return (
+    <>
+      <div className="panel-title" style={{ marginTop: 8 }}>
+        📍 Konum takibi (Kod 1'den gün sonu QR'ına kadar)
+      </div>
+      <div className="small muted">
+        Konumun yalnızca bu cihazda izlenir. Etkinlik alanından ({radius} m) çıkarsan sadece mesafe bilgisi zincire yazılır ve işverene
+        bildirim gider; ham koordinatların hiçbir yere gönderilmez.
+      </div>
+      <div className="row">
+        <button className={on ? "btn secondary sm" : "btn sm"} onClick={() => setOn(!on)}>
+          {on ? "Takibi durdur" : "Konum takibini başlat"}
+        </button>
+        {on && dist !== null && (
+          <span className={`badge ${dist <= radius ? "ok" : "warn"}`}>
+            Etkinliğe {dist} m {dist <= radius ? "· alan içinde" : "· alan dışında"}
+          </span>
+        )}
+        <AsyncButton
+          className="btn ghost sm"
+          title="Demo: etkinlik noktasından ~650 m uzaklaşmış gibi davran"
+          onClick={() => report(650, venue.lat + 0.0058, venue.lng)}
+        >
+          Demo: alandan çık
+        </AsyncButton>
+      </div>
+    </>
   );
 }
 
@@ -429,6 +547,9 @@ function WorkerPanel({
   const idx = job.stakeholders.findIndex((s) => s.address === me.address);
   const demoCodes = loadCodes(job.id); // yalnızca aynı tarayıcıda işveren rolü de oynanıyorsa (demo)
   const myProofs = job.locations.filter((l) => l.worker === me.address);
+  const absent = lastAlert(job, me.address, ALERT_REPORTED_ABSENT);
+  // Kod 2 işverenin onayıdır; çalışan sıradaki okutulabilir kodu (Kod 1 ya da gün sonu QR'ı) okutur
+  const scannable = next === 0 ? 0 : 2;
 
   const applyCode = async (text: string) => {
     const p = decodeQr(text);
@@ -459,9 +580,18 @@ function WorkerPanel({
 
   return (
     <div className="panel">
+      {absent && !isReleased(me, 1) && (
+        <div className="callout err small" role="alert">
+          🔔 İşveren {hhmm(absent.timestamp)} itibarıyla iş yerinde olmadığını bildirdi. Oradaysan işverenle konuş ya da konum takibinle
+          kanıt oluştur; hakem inceleyebilir.
+        </div>
+      )}
       <div className="panel-title">
         📷 Sıradaki ödeme: <b>{TRANCHE_LABELS[next]}</b> → toplam {fromUnits(trancheTarget(job, me, next))} USDC
       </div>
+      {next === 1 && (
+        <div className="small muted">Kod 2 işverenin "hâlâ burada" onayıyla açılır. Gün sonunda işverenin QR'ını okutarak kalan payını alırsın.</div>
+      )}
       {processing && (
         <div className="callout row" role="status">
           <span className="spinner" /> QR doğrulandı · {processing} ödemesi Trustless Work escrow'undan hesabına gönderiliyor…
@@ -469,21 +599,24 @@ function WorkerPanel({
       )}
       <div className="row">
         <button className="btn" disabled={!!processing} onClick={() => setScanning(true)}>
-          İşverenin QR'ını okut
+          {scannable === 0 ? "Kod 1'i okut (varış)" : "Gün sonu QR'ını okut"}
         </button>
         {demoCodes && (
           <AsyncButton
             className="btn secondary sm"
             title="Demo: işveren rolü aynı tarayıcıda oynandığı için kod bu cihazda duruyor"
-            onClick={() => applyCode(encodeQr({ jobId: job.id, tranche: next, worker: me.address, code: demoCodes[idx * 3 + next] }))}
+            onClick={() => applyCode(encodeQr({ jobId: job.id, tranche: scannable, worker: me.address, code: demoCodes[idx * 3 + scannable] }))}
           >
-            Demo: işverenin ekranındaki QR
+            Demo: işverenin ekranındaki {scannable === 0 ? "Kod 1" : "gün sonu QR'ı"}
           </AsyncButton>
         )}
       </div>
 
+      {isReleased(me, 0) && <LocationTracker job={job} me={me} signer={signer} run={run} venue={venue} />}
+      {!isReleased(me, 0) && (
+      <>
       <div className="panel-title" style={{ marginTop: 8 }}>
-        📍 İşveren kod vermiyor mu? Konumunu kanıt olarak kaydet, hakem kaporayı serbest bıraksın.
+        📍 İşveren Kod 1'i vermiyor mu? Konumunu kanıt olarak kaydet, hakem kaporayı serbest bıraksın.
       </div>
       <div className="row">
         <AsyncButton
@@ -532,9 +665,11 @@ function WorkerPanel({
           {new Date(Number(myProofs[myProofs.length - 1].timestamp) * 1000).toLocaleTimeString("tr-TR")}
         </div>
       )}
+      </>
+      )}
 
       {scanning && (
-        <Modal title={`${TRANCHE_LABELS[next]} QR'ını okut`} onClose={() => setScanning(false)}>
+        <Modal title={`${TRANCHE_LABELS[scannable]} okut`} onClose={() => setScanning(false)}>
           <QrScanner onResult={applyCode} />
           <div className="row" style={{ flexWrap: "nowrap" }}>
             <input style={{ flex: 1 }} placeholder="veya QR içeriğini yapıştır (EKISLER:…)" value={manual} onChange={(e) => setManual(e.target.value)} />
@@ -615,7 +750,7 @@ function DisputePanel({ job, signer, run }: { job: Job; signer: Signer; run: Ret
   const open = (escrow?.milestones ?? [])
     .map((m, index) => ({ m, index }))
     .filter(({ m }) => m.flags.disputed && !m.flags.resolved && !m.flags.released);
-  const label = (d: string) => ({ varis: "Varış (kapora)", mesai: "Mesai ortası", bitis: "Bitiş", ihaleci: "İhaleci payı" })[d] ?? d;
+  const label = (d: string) => ({ varis: "Kod 1 · Varış", mesai: "Kod 2 · Devam", bitis: "Gün sonu", ihaleci: "İhaleci payı" })[d] ?? d;
   const total = open.reduce((a, { m }) => a + m.amount, 0n);
 
   return (

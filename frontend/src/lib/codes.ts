@@ -8,8 +8,8 @@ import { CONTRACT_ID } from "./config.ts";
  * ve sahada QR olarak gösterilir. Çalışan QR'ı okutunca kontrat hash'i doğrular ve dilimi öder.
  */
 
-export const TRANCHE_LABELS = ["Varış (kapora)", "Mesai ortası", "Bitiş"] as const;
-export const TRANCHE_SHORT = ["Varış", "Mesai", "Bitiş"] as const;
+export const TRANCHE_LABELS = ["Kod 1 · Varış (kapora)", "Kod 2 · Devam kontrolü", "QR · Gün sonu"] as const;
+export const TRANCHE_SHORT = ["Kod 1", "Kod 2", "QR"] as const;
 export const TRANCHES = 3;
 
 const key = (jobId: bigint | number) => `ekisler.codes.${CONTRACT_ID}.${jobId}`;

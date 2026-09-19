@@ -98,6 +98,19 @@ pub struct LocationProof {
     pub timestamp: u64,
 }
 
+/// Uyarı türleri
+pub const ALERT_REPORTED_ABSENT: u32 = 1; // Kod 2: işveren "çalışan burada değil" dedi (çalışana bildirim)
+pub const ALERT_LEFT_AREA: u32 = 2; // Konum takibi: çalışan etkinlik alanından çıktı (işverene bildirim)
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[contracttype]
+pub struct Alert {
+    pub worker: Address,
+    pub kind: u32,
+    pub distance_m: u32, // alan dışı uyarısında etkinlik noktasına mesafe, diğerlerinde 0
+    pub timestamp: u64,
+}
+
 /// İhalecinin önerdiği, çalışanların imzayla kabul ettiği iş şartları.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
@@ -128,6 +141,8 @@ pub struct Job {
     /// İşverenin deposit sırasında verdiği kod hash'leri: paydaş i, dilim t → [i * 3 + t]
     pub commitments: Vec<BytesN<32>>,
     pub locations: Vec<LocationProof>,
+    /// Kod 2 "burada değil" bildirimleri ve alan dışı çıkışlar
+    pub alerts: Vec<Alert>,
     pub close_mode: u32,
 }
 
@@ -183,6 +198,27 @@ pub struct LocationSubmitted {
     pub job_id: u64,
     #[topic]
     pub worker: Address,
+    pub distance_m: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresenceChecked {
+    #[topic]
+    pub job_id: u64,
+    #[topic]
+    pub worker: Address,
+    pub present: bool,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AlertRaised {
+    #[topic]
+    pub job_id: u64,
+    #[topic]
+    pub worker: Address,
+    pub kind: u32,
     pub distance_m: u32,
 }
 
@@ -522,6 +558,7 @@ impl EkIslerContract {
             escrow: escrow_addr,
             commitments: Vec::new(&env),
             locations: Vec::new(&env),
+            alerts: Vec::new(&env),
             close_mode: 0,
         };
         save_job(&env, &job);
@@ -613,16 +650,45 @@ impl EkIslerContract {
             return Err(Error::InvalidStatus);
         }
         find(&job, &worker)?;
+        let now = env.ledger().timestamp();
         job.locations.push_back(LocationProof {
             worker: worker.clone(),
             distance_m,
             reading_hash,
-            timestamp: env.ledger().timestamp(),
+            timestamp: now,
         });
+        if distance_m > job.terms.radius_m {
+            job.alerts.push_back(Alert { worker: worker.clone(), kind: ALERT_LEFT_AREA, distance_m, timestamp: now });
+            AlertRaised { job_id, worker: worker.clone(), kind: ALERT_LEFT_AREA, distance_m }.publish(&env);
+        }
         save_job(&env, &job);
 
         LocationSubmitted { job_id, worker, distance_m }.publish(&env);
         Ok(())
+    }
+
+    /// Kod 2 · devam kontrolü: işveren çalışanın hâlâ iş yerinde olup olmadığını onaylar.
+    /// "Burada" → mesai dilimi (gerekirse kapora da) Trustless Work'ten anında ödenir.
+    /// "Burada değil" → zincire uyarı düşer, çalışana bildirim gider; para hareket etmez.
+    pub fn confirm_presence(env: Env, job_id: u64, worker: Address, present: bool) -> Result<i128, Error> {
+        let mut job = load_job(&env, job_id)?;
+        job.terms.client.require_auth();
+
+        if job.status != JobStatus::Funded {
+            return Err(Error::InvalidStatus);
+        }
+        let idx = find(&job, &worker)?;
+        let amount = if present {
+            release_up_to(&env, &mut job, idx, TRANCHE_MID, false)?
+        } else {
+            let now = env.ledger().timestamp();
+            job.alerts.push_back(Alert { worker: worker.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0, timestamp: now });
+            AlertRaised { job_id, worker: worker.clone(), kind: ALERT_REPORTED_ABSENT, distance_m: 0 }.publish(&env);
+            0
+        };
+        save_job(&env, &job);
+        PresenceChecked { job_id, worker, present }.publish(&env);
+        Ok(amount)
     }
 
     /// Hakem, konum kanıtını inceleyip (ör. işveren varış kodunu vermediyse) bir dilimi açar.

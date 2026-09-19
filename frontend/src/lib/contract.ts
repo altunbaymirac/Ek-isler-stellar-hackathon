@@ -40,6 +40,16 @@ export interface LocationProof {
   timestamp: bigint;
 }
 
+/** 1: Kod 2'de işveren "burada değil" dedi · 2: çalışan etkinlik alanından çıktı */
+export interface Alert {
+  worker: string;
+  kind: number;
+  distance_m: number;
+  timestamp: bigint;
+}
+export const ALERT_REPORTED_ABSENT = 1;
+export const ALERT_LEFT_AREA = 2;
+
 export interface JobTerms {
   client: string;
   arbiter: string;
@@ -63,6 +73,7 @@ export interface Job {
   escrow: string; // Trustless Work multi-release escrow kontratı
   commitments: Buffer[];
   locations: LocationProof[];
+  alerts: Alert[];
   close_mode: number;
 }
 
@@ -209,6 +220,10 @@ export const claimTranche = (signer: Signer, id: bigint, tranche: number, codeHe
 /** Zincire yalnızca mesafe ve ham ölçümün hash'i gider; ham ölçüm (tuzla) çalışanın cihazında saklanır. */
 export const submitLocation = (signer: Signer, id: bigint, distanceM: number, readingHash: Buffer) =>
   invoke<void>(signer, "submit_location", { job_id: id, worker: signer.address, distance_m: distanceM, reading_hash: readingHash });
+
+/** Kod 2: işveren çalışanın hâlâ iş yerinde olup olmadığını onaylar (evet → mesai dilimi ödenir) */
+export const confirmPresence = (signer: Signer, id: bigint, worker: string, present: boolean) =>
+  invoke<bigint>(signer, "confirm_presence", { job_id: id, worker, present });
 
 export const arbiterRelease = (signer: Signer, id: bigint, worker: string, tranche: number) =>
   invoke<bigint>(signer, "arbiter_release", { job_id: id, worker, tranche });
