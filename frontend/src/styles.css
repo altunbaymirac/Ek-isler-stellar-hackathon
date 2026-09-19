@@ -379,3 +379,4 @@ a.tranche:hover { text-decoration: none; box-shadow: inset 0 0 0 1px currentColo
 .role { min-height: 0; }
 .step4 { justify-content: center; }
 .step4 .title { font-family: var(--display); font-size: 1.05rem; }
+.call-note { font-family: "DM Sans", system-ui, sans-serif; font-weight: 500; opacity: 0.75; }

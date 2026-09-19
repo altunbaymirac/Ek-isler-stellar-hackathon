@@ -138,6 +138,7 @@ export function ContractCallChip({ hash, compact }: { hash: string | undefined; 
         <span>
           <span className="call-contract">{name}.</span>
           <b>{call.fn}</b>({compact ? (call.args.length ? "…" : "") : call.args.join(", ")})
+          {call.fn === "deposit" && <span className="call-note"> · {L("tüm bedel escrow'a, kapora değil", "full amount into escrow, not a down payment")}</span>}
         </span>
       )}{" "}
       ↗

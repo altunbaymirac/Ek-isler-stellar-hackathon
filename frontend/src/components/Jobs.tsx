@@ -542,7 +542,7 @@ function ContractStage({ job, last }: { job: Job; last: string | undefined }) {
     job.status === JobStatus.PendingApproval
       ? [["accept_job(job_id, worker)", W]]
       : job.status === JobStatus.Approved
-        ? [["deposit(job_id)", C]]
+        ? [["deposit(job_id)", `${C} · ${L("tüm bedeli escrow'a kilitler, kapora değil", "locks the full amount in escrow, not a down payment")}`]]
         : job.status === JobStatus.Funded
           ? [
               ...(job.commitments.length === 0 ? [["set_codes(job_id, commitments)", K] as [string, string]] : []),

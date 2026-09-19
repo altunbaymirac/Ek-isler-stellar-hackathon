@@ -48,7 +48,7 @@ The money never enters any company's account. It is locked in a **Trustless Work
 
 The app has ready-made **testnet demo accounts**: Employer, Contractor, three workers (Italian Interpreter, Camera Operator, Photographer) and Arbiter. **Add role** creates more worker accounts (e.g. "Waiter"). Switch roles in one browser to show the whole flow, or use **Connect your own wallet** (Freighter, xBull, Lobstr, …) to play any role with a real wallet. The UI is in English by default; TR/EN is switchable at the top right.
 
-1. **Set up demo accounts**: Friendbot XLM + USDC trustline.
+1. **Set up demo accounts**: Friendbot XLM + USDC trustline for every account, then ~20 test USDC for the employer through the anchor (SEP-6).
 2. **Employer → TRY ⇄ USDC**: sign in with the wallet (SEP-10) → KYC (SEP-12) → quote for 1000 TRY (SEP-38) → transfer instructions (SEP-6 deposit-exchange) → *Send the transfer* → ~20 USDC arrives.
 3. **Contractor → New job**: employer, 20 USDC, shares 40% / 20% / 20% / 20%, **working hours** (the *2 min* preset for the demo), venue (Grand Pera), arbiter → `create_job`. The form shows exactly when the Code 2 roll call will open.
 4. **Workers → Jobs**: *Accept my share and the terms* (`accept_job`).
@@ -162,7 +162,7 @@ stateDiagram-v2
 |---|---|---|
 | `create_job(contractor, terms) -> u64` | Contractor | Validates the terms and deploys the job's **Trustless Work escrow** with its milestones. Shares total 100%, no duplicate addresses, the arbiter can't be a party, working hours can't go past the deadline. |
 | `accept_job(job_id, worker)` | Worker | Accepts their share and the terms with their signature. The last approval moves the job to `Approved`. |
-| `deposit(job_id)` | Employer | Funds the Trustless Work escrow (`fund_escrow`). |
+| `deposit(job_id)` | Employer | Locks the **full job amount** in the Trustless Work escrow (`fund_escrow`). Despite the name, this is not a down payment: no worker is paid at this step. |
 | `set_codes(job_id, commitments)` | Contractor | Stores the sha256 of each stakeholder's Code 1 and end-of-day secret. Can be renewed for unpaid shares (if the contractor switches devices). |
 | `check_in(job_id, worker, code)` | Worker | **Code 1**: verifies the code handed over in person and marks the worker as *arrived*. **No money moves.** |
 | `claim(job_id, worker, code) -> i128` | Worker | **End-of-day QR**: verifies the secret and releases the full share from Trustless Work. |
@@ -310,7 +310,7 @@ Para hiçbir şirketin hesabına girmez. Her iş için açılan bir **Trustless 
 
 Uygulamada hazır **testnet demo hesapları** var: İşveren, İhaleci, üç çalışan (İtalyanca Çevirmen, Kameraman, Fotoğrafçı) ve Hakem. **Rol ekle** ile yeni çalışan hesapları açılabilir (ör. "Garson"). Tek tarayıcıda rolleri değiştirerek tüm akışı gösterebilirsin; **Kendi cüzdanını bağla** ile Freighter, xBull, Lobstr vb. gerçek bir cüzdanla da herhangi bir rolü oynayabilirsin. Arayüz varsayılan olarak İngilizce; TR/EN sağ üstten değişir.
 
-1. **Demo hesaplarını hazırla**: Friendbot ile XLM + USDC trustline.
+1. **Demo hesaplarını hazırla**: her hesaba Friendbot ile XLM + USDC trustline, ardından işverene anchor üzerinden (SEP-6) ~20 test USDC'si.
 2. **İşveren → TRY ⇄ USDC**: Cüzdanla giriş (SEP-10) → KYC (SEP-12) → 1000 TL için kur (SEP-38) → havale talimatı (SEP-6 deposit-exchange) → *Havaleyi gönder* → ~20 USDC hesaba gelir.
 3. **İhaleci → Yeni iş**: işveren, 20 USDC, paylar %40 / %20 / %20 / %20, **çalışma saatleri** (demoda *2 dk* hazır seçeneği), etkinlik konumu (Grand Pera), hakem → `create_job`. Form, Kod 2 yoklamasının tam olarak ne zaman açılacağını gösterir.
 4. **Çalışanlar → İşler**: *Payımı ve şartları onayla* (`accept_job`).
@@ -338,7 +338,7 @@ Trustless Work entegrasyonu, akış ve durum diyagramları için [İngilizce bö
 |---|---|---|
 | `create_job(contractor, terms) -> u64` | İhaleci | Şartları doğrular ve işe özel **Trustless Work escrow**'unu deploy edip milestone'larla başlatır. Paylar toplamı %100, tekrar eden adres yok, hakem taraflardan biri olamaz, çalışma saatleri son tarihi geçemez. |
 | `accept_job(job_id, worker)` | Çalışan | Payını ve şartları imzasıyla kabul eder. Son onayla `Approved`. |
-| `deposit(job_id)` | İşveren | Trustless Work escrow'unu fonlar (`fund_escrow`). |
+| `deposit(job_id)` | İşveren | İşin **tüm bedelini** Trustless Work escrow'una kilitler (`fund_escrow`). Adı "deposit" olsa da kapora değildir: bu adımda hiçbir çalışana ödeme yapılmaz. |
 | `set_codes(job_id, commitments)` | İhaleci | Her paydaş için Kod 1 ve gün sonu QR gizinin sha256'sını kaydeder. Ödenmemiş paylar için yenilenebilir (ihaleci cihaz değiştirirse). |
 | `check_in(job_id, worker, code)` | Çalışan | **Kod 1**: elden verilen kodu doğrular, çalışanı *gelmiş* işaretler. **Para hareket etmez.** |
 | `claim(job_id, worker, code) -> i128` | Çalışan | **Gün sonu QR'ı**: gizi doğrular ve payın tamamını Trustless Work'ten ödetir. |
