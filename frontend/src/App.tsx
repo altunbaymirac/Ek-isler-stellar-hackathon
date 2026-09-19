@@ -1,5 +1,5 @@
 import { Check, Plus, RefreshCw, Wallet, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppCtx, type AppState, type Tab } from "./app-context.tsx";
 import { CreateJob } from "./components/CreateJob.tsx";
 import { Jobs } from "./components/Jobs.tsx";
@@ -100,6 +100,7 @@ function AppInner() {
   );
 
   const [setupMsg, setSetupMsg] = useState<string | null>(null);
+  const setupRunning = useRef(false);
 
   /**
    * Demo hesaplarını hazırlar: testnet XLM (Friendbot) + USDC trustline, sonra işverene anchor
@@ -107,6 +108,9 @@ function AppInner() {
    * anda gelen çok isteği (yeni tarayıcıda 6+ hesap) reddedebiliyor.
    */
   const prepareAll = async () => {
+    // Üst üste basılırsa ikinci kurulum başlamasın: aynı hesaba paralel işlem sıra numarası hatası verir
+    if (setupRunning.current) return;
+    setupRunning.current = true;
     const all = [...Object.values(demo), ...(wallet ? [wallet] : [])];
     const failed: string[] = [];
     try {
@@ -128,9 +132,10 @@ function AppInner() {
         return;
       }
 
-      // İşveren işi fonlayabilsin diye anchor'dan test USDC'si (1000 TL ≈ 20 USDC)
+      // İşveren işi fonlayabilsin diye anchor'dan test USDC'si (1000 TL ≈ 20 USDC); yalnızca bakiye
+      // neredeyse boşsa. Her basışta yeniden yüklemek anchor'da üst üste işlem açıyordu.
       const client = demo.client;
-      if (client && Number((await getBalances(client.address)).usdc ?? 0) < 25) {
+      if (client && Number((await getBalances(client.address)).usdc ?? 0) < 5) {
         setSetupMsg(L("İşverene anchor üzerinden 1000 TL karşılığı test USDC'si yükleniyor (~30 sn)…", "Loading test USDC worth 1000 TRY to the employer through the anchor (~30 s)…"));
         try {
           const info = await anchor.discover();
@@ -148,6 +153,7 @@ function AppInner() {
       }
       toast("ok", L("Tüm demo hesapları hazır: testnet XLM, USDC trustline ve işverende test USDC'si", "All demo accounts are ready: testnet XLM, USDC trustlines and test USDC for the employer"));
     } finally {
+      setupRunning.current = false;
       setSetupMsg(null);
       await refreshBalances();
     }

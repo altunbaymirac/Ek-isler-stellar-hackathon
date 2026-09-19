@@ -61,7 +61,6 @@ export const DEMO_ROLES: DemoRole[] = [
   { key: "contractor", tr: { label: "İhaleci", hint: "İşi tanımlar, sahada kodları verir" }, en: { label: "Contractor", hint: "Defines the job, hands out codes on site" } },
   { key: "w1", tr: { label: "İtalyanca Çevirmen", hint: "Kodu girer, QR ile payını alır" }, en: { label: "Italian Interpreter", hint: "Enters the code, gets paid by QR" } },
   { key: "w2", tr: { label: "Kameraman", hint: "Kodu girer, QR ile payını alır" }, en: { label: "Camera Operator", hint: "Enters the code, gets paid by QR" } },
-  { key: "w3", tr: { label: "Fotoğrafçı", hint: "Kodu girer, QR ile payını alır" }, en: { label: "Photographer", hint: "Enters the code, gets paid by QR" } },
   { key: "arbiter", tr: { label: "Hakem", hint: "Anlaşmazlıkta karar verir" }, en: { label: "Arbiter", hint: "Decides disputes" } },
 ];
 

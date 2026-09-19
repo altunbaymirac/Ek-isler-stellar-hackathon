@@ -1,5 +1,5 @@
 import { BriefcaseBusiness, Building2, Camera, Check, CircleAlert, Info, Languages, Scale, UserRound, Video, Wallet, type LucideIcon } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { CONTRACT_ID, expertTx } from "../lib/config.ts";
 import { L } from "../lib/i18n.ts";
 import { contractCall, type ContractCall } from "../lib/txinfo.ts";
@@ -67,16 +67,20 @@ export function AsyncButton({
   title?: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   return (
     <button
       className={className}
       disabled={disabled || busy}
       title={title}
       onClick={async () => {
+        if (running.current) return;
+        running.current = true;
         setBusy(true);
         try {
           await onClick();
         } finally {
+          running.current = false;
           setBusy(false);
         }
       }}

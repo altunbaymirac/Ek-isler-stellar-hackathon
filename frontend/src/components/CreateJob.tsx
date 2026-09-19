@@ -42,9 +42,8 @@ export function CreateJob() {
   const [clientCustom, setClientCustom] = useState("");
   const [amount, setAmount] = useState("20");
   const [rows, setRows] = useState<Row[]>([
-    { who: "w1", custom: "", percent: "20" },
-    { who: "w2", custom: "", percent: "20" },
-    { who: "w3", custom: "", percent: "20" },
+    { who: "w1", custom: "", percent: "30" },
+    { who: "w2", custom: "", percent: "30" },
   ]);
   const [contractorPct, setContractorPct] = useState("40");
   const [deadline, setDeadline] = useState(() => toLocalInput(new Date(Date.now() + 24 * 3600 * 1000)));

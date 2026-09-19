@@ -16,7 +16,7 @@ Stellar Hackathon Türkiye 2026 · Stellar Testnet · Soroban + **Trustless Work
 
 ## Problem
 
-Weekend e-sports tournaments, festivals, trade fairs, interpreting jobs, stage builds… A **contractor** (crew lead) wins the job and hires **workers** to deliver it (e.g. an Italian interpreter, a camera operator, a photographer).
+Weekend e-sports tournaments, festivals, trade fairs, interpreting jobs, stage builds… A **contractor** (crew lead) wins the job and hires **workers** to deliver it (e.g. an Italian interpreter and a camera operator).
 
 1. **Payment anxiety:** The employer pays the contractor; the contractor pays the worker late or short. The worker waits for days wondering whether the money will arrive.
 2. **Hidden share fraud:** The contractor verbally agrees on 32% with a worker, then quietly enters 20% in the system.
@@ -46,11 +46,11 @@ The money never enters any company's account. It is locked in a **Trustless Work
 
 ## Demo flow (≈4 min)
 
-The app has ready-made **testnet demo accounts**: Employer, Contractor, three workers (Italian Interpreter, Camera Operator, Photographer) and Arbiter. **Add role** creates more worker accounts (e.g. "Waiter"). Switch roles in one browser to show the whole flow, or use **Connect your own wallet** (Freighter, xBull, Lobstr, …) to play any role with a real wallet. The UI is in English by default; TR/EN is switchable at the top right.
+The app has ready-made **testnet demo accounts**: Employer, Contractor, two workers (Italian Interpreter, Camera Operator) and Arbiter. **Add role** creates more worker accounts (e.g. "Waiter"). Switch roles in one browser to show the whole flow, or use **Connect your own wallet** (Freighter, xBull, Lobstr, …) to play any role with a real wallet. The UI is in English by default; TR/EN is switchable at the top right.
 
 1. **Set up demo accounts**: Friendbot XLM + USDC trustline for every account, then ~20 test USDC for the employer through the anchor (SEP-6).
 2. **Employer → TRY ⇄ USDC**: sign in with the wallet (SEP-10) → KYC (SEP-12) → quote for 1000 TRY (SEP-38) → transfer instructions (SEP-6 deposit-exchange) → *Send the transfer* → ~20 USDC arrives.
-3. **Contractor → New job**: employer, 20 USDC, shares 40% / 20% / 20% / 20%, **working hours** (the *2 min* preset for the demo), venue (Grand Pera), arbiter → `create_job`. The form shows exactly when the Code 2 roll call will open.
+3. **Contractor → New job**: employer, 20 USDC, shares 40% / 30% / 30%, **working hours** (the *2 min* preset for the demo), venue (Grand Pera), arbiter → `create_job`. The form shows exactly when the Code 2 roll call will open.
 4. **Workers → Jobs**: *Accept my share and the terms* (`accept_job`).
 5. **Employer**: *Lock the money in escrow* (`deposit`). **Contractor**: *Create on-site codes* (`set_codes`) → Code 1 and an end-of-day QR are ready for each worker.
 6. **Italian Interpreter**: the contractor taps *Show Code 1*, the worker types it (`check_in`) → **no money moves**, "arrived" is written on-chain. Location tracking starts automatically (*Demo: leave the venue* in the demo).
@@ -278,7 +278,7 @@ MIT
 
 ## Problem
 
-Hafta sonu e-spor turnuvası, festival, fuar, çeviri işi, sahne kurulumu… Bu işlerde işi alan bir **ihaleci** (taşeron lideri) vardır, o da işi yürütmek için **alt çalışanlar** tutar (ör. İtalyanca çevirmen, kameraman, fotoğrafçı).
+Hafta sonu e-spor turnuvası, festival, fuar, çeviri işi, sahne kurulumu… Bu işlerde işi alan bir **ihaleci** (taşeron lideri) vardır, o da işi yürütmek için **alt çalışanlar** tutar (ör. İtalyanca çevirmen ve kameraman).
 
 1. **Tahsilat stresi:** İşveren parayı ihaleciye öder; ihaleci çalışanın payını geç ya da eksik yatırır. Çalışan günlerce "param yattı mı?" diye bekler.
 2. **Gizli oran hilesi:** İhaleci çalışanla sözlü olarak %32'de anlaşır, sisteme habersizce %20 yazar.
@@ -308,11 +308,11 @@ Para hiçbir şirketin hesabına girmez. Her iş için açılan bir **Trustless 
 
 ## Demo akışı (≈4 dk)
 
-Uygulamada hazır **testnet demo hesapları** var: İşveren, İhaleci, üç çalışan (İtalyanca Çevirmen, Kameraman, Fotoğrafçı) ve Hakem. **Rol ekle** ile yeni çalışan hesapları açılabilir (ör. "Garson"). Tek tarayıcıda rolleri değiştirerek tüm akışı gösterebilirsin; **Kendi cüzdanını bağla** ile Freighter, xBull, Lobstr vb. gerçek bir cüzdanla da herhangi bir rolü oynayabilirsin. Arayüz varsayılan olarak İngilizce; TR/EN sağ üstten değişir.
+Uygulamada hazır **testnet demo hesapları** var: İşveren, İhaleci, iki çalışan (İtalyanca Çevirmen, Kameraman) ve Hakem. **Rol ekle** ile yeni çalışan hesapları açılabilir (ör. "Garson"). Tek tarayıcıda rolleri değiştirerek tüm akışı gösterebilirsin; **Kendi cüzdanını bağla** ile Freighter, xBull, Lobstr vb. gerçek bir cüzdanla da herhangi bir rolü oynayabilirsin. Arayüz varsayılan olarak İngilizce; TR/EN sağ üstten değişir.
 
 1. **Demo hesaplarını hazırla**: her hesaba Friendbot ile XLM + USDC trustline, ardından işverene anchor üzerinden (SEP-6) ~20 test USDC'si.
 2. **İşveren → TRY ⇄ USDC**: Cüzdanla giriş (SEP-10) → KYC (SEP-12) → 1000 TL için kur (SEP-38) → havale talimatı (SEP-6 deposit-exchange) → *Havaleyi gönder* → ~20 USDC hesaba gelir.
-3. **İhaleci → Yeni iş**: işveren, 20 USDC, paylar %40 / %20 / %20 / %20, **çalışma saatleri** (demoda *2 dk* hazır seçeneği), etkinlik konumu (Grand Pera), hakem → `create_job`. Form, Kod 2 yoklamasının tam olarak ne zaman açılacağını gösterir.
+3. **İhaleci → Yeni iş**: işveren, 20 USDC, paylar %40 / %30 / %30, **çalışma saatleri** (demoda *2 dk* hazır seçeneği), etkinlik konumu (Grand Pera), hakem → `create_job`. Form, Kod 2 yoklamasının tam olarak ne zaman açılacağını gösterir.
 4. **Çalışanlar → İşler**: *Payımı ve şartları onayla* (`accept_job`).
 5. **İşveren**: *Parayı escrow'a kilitle* (`deposit`). **İhaleci**: *Saha kodlarını oluştur* (`set_codes`) → her çalışan için Kod 1 ve gün sonu QR'ı hazır.
 6. **İtalyanca Çevirmen**: ihaleci *Kod 1'i göster* der, çalışan kodu yazar (`check_in`) → **para hareket etmez**, zincire "geldi" yazılır. Konum takibi kendiliğinden başlar (demoda *Demo: alandan çık*).
