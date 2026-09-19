@@ -1,7 +1,10 @@
 import { Asset, Networks } from "@stellar/stellar-sdk";
 
+// Tarayıcıda Vite'ın import.meta.env'i, Node script'lerinde process.env okunur
 const env: Record<string, string | undefined> =
-  (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
+  (import.meta as { env?: Record<string, string | undefined> }).env ??
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ??
+  {};
 
 export const NETWORK_PASSPHRASE = Networks.TESTNET;
 export const RPC_URL = env.VITE_RPC_URL ?? "https://soroban-testnet.stellar.org";

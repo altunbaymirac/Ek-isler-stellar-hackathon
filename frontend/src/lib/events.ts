@@ -13,9 +13,10 @@ function rpcServer() {
   return server;
 }
 
-// Testnet'te ledger ~5 sn sürer; ~7 günlük geriye bakış "1 hafta" son tarih ön ayarını kapsar.
-// Bunun ötesi (çok eski işler) için zaman damgası bulunamaz ve hatırlatma sessizce gösterilmez.
-const LOOKBACK_LEDGERS = 120_000;
+// Testnet RPC'si getEvents'te ~10.000 ledger'dan uzun aralıklarda hata vermeden sessizce boş
+// döndürüyor; pencere bu sınırın altında tutulur (~11 saat). Daha eski işlerde hatırlatma gösterilmez.
+// (Mehmet Emin'in tespiti)
+const LOOKBACK_LEDGERS = 8_000;
 const MAX_PAGES = 5;
 
 function decode(v: xdr.ScVal | { xdr: string }): unknown {
@@ -59,7 +60,8 @@ async function fetchTrancheReleasedAt(jobId: bigint, worker: string, tranche: nu
     for (const e of res.events) {
       try {
         const topics = e.topic.map(decode);
-        if (!topics.includes("TrancheReleased")) continue;
+        // #[contractevent] topic'i struct adını snake_case'e çevirir: TrancheReleased → "tranche_released"
+        if (!topics.includes("tranche_released")) continue;
         if (!topics.some((v) => typeof v === "bigint" && v === jobId)) continue;
         if (!topics.includes(worker)) continue;
         const data = decode(e.value) as Record<string, unknown>;
