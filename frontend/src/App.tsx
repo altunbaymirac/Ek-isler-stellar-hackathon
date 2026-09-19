@@ -101,6 +101,14 @@ export default function App() {
 
   const needsSetup = balances && (!balances.funded || balances.usdc === null);
 
+  const activeRole = DEMO_ROLES.find((r) => r.key === activeKey);
+
+  // Telefonda roller yana kayar: açılışta seçili rol görünür olsun
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>(".role.active");
+    const row = el?.parentElement;
+    if (el && row && row.scrollWidth > row.clientWidth) row.scrollLeft += el.getBoundingClientRect().left - row.getBoundingClientRect().left - 16;
+  }, []);
   const tryValue = balances?.usdc != null && tryPerUsdc ? Number(balances.usdc) * tryPerUsdc : null;
 
   return (
@@ -119,23 +127,42 @@ export default function App() {
         </header>
 
         <div className="band-grid">
-          <div>
-            <div className="who-label">Kim olarak devam ediyorsun?</div>
-            <div className="accounts" role="radiogroup" aria-label="Aktif hesap">
-              {DEMO_ROLES.map((r) => (
-                <button
-                  key={r.key}
-                  role="radio"
-                  aria-checked={activeKey === r.key}
-                  className={`acct ${activeKey === r.key ? "active" : ""}`}
-                  onClick={() => selectAccount(r.key)}
-                  title={r.hint}
-                  aria-label={`${r.label}: ${r.hint}`}
-                >
-                  <span className="emoji">{r.emoji}</span>
-                  <span className="name">{r.label}</span>
-                </button>
-              ))}
+          <div id="roles">
+            <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+              <div className="who-label" style={{ margin: 0 }}>
+                Demo rolünü seç · aynı tarayıcıda tüm tarafları oynayabilirsin
+              </div>
+            </div>
+            <div className="roles" role="radiogroup" aria-label="Aktif rol">
+              {DEMO_ROLES.map((r) => {
+                const active = activeKey === r.key;
+                return (
+                  <button
+                    key={r.key}
+                    role="radio"
+                    aria-checked={active}
+                    className={`role ${active ? "active" : ""}`}
+                    onClick={(e) => {
+                      selectAccount(r.key);
+                      e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+                    }}
+                  >
+                    <span className="role-top">
+                      <span className="emoji" aria-hidden="true">
+                        {r.emoji}
+                      </span>
+                      {active && <span className="role-check">✓ Seçili</span>}
+                    </span>
+                    <span className="name">{r.label}</span>
+                    <span className="hint">{r.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <span className="small" style={{ color: "var(--on-ink-muted)" }}>
+                veya
+              </span>
               {wallet ? (
                 <button
                   role="radio"
@@ -144,7 +171,7 @@ export default function App() {
                   onClick={() => selectAccount("wallet")}
                 >
                   <span className="emoji">👛</span>
-                  <span className="name">Cüzdanım</span>
+                  <span className="name">Cüzdanım · {short(wallet.address)}</span>
                 </button>
               ) : (
                 <AsyncButton
@@ -162,7 +189,7 @@ export default function App() {
                   }}
                 >
                   <span className="emoji">👛</span>
-                  <span className="name">Cüzdan bağla</span>
+                  <span className="name">Kendi cüzdanını bağla</span>
                 </AsyncButton>
               )}
             </div>
@@ -174,7 +201,7 @@ export default function App() {
               <span className="who small">{signer ? nameOf(signer.address) : "—"}</span>
             </div>
             <div className="big">
-              {balances?.usdc != null ? Number(balances.usdc).toFixed(2) : "0.00"}
+              {balances === null ? "…" : balances.usdc != null ? Number(balances.usdc).toFixed(2) : "0.00"}
               <small>USDC</small>
             </div>
             <div className="try">{tryValue !== null ? `≈ ₺${tryValue.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}` : " "}</div>
@@ -189,7 +216,7 @@ export default function App() {
                     {short(signer.address)} ↗
                   </a>
                 )}
-                <span>· {balances?.funded ? Number(balances.xlm).toFixed(0) : "0"} XLM</span>
+                {balances && <span>· {balances.funded ? Number(balances.xlm).toFixed(0) : "0"} XLM</span>}
                 <div className="spacer" />
                 <AsyncButton className="btn ghost sm" onClick={prepareAll} title="Tüm demo hesaplarını fonla ve trustline aç">
                   Hazırla
@@ -212,6 +239,23 @@ export default function App() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="rolebar" role="status">
+        <div className="rolebar-inner">
+          <span className="emoji" aria-hidden="true">
+            {activeRole?.emoji ?? "👛"}
+          </span>
+          <span>
+            Şu an <b>{activeRole?.label ?? "Cüzdanım"}</b> olarak görüyorsun
+            <span className="rolebar-hint"> · {activeRole?.hint ?? "Kendi cüzdanınla herhangi bir rolü oynayabilirsin"}</span>
+          </span>
+          <div className="spacer" />
+          <span className="rolebar-bal">{balances?.usdc != null ? `${Number(balances.usdc).toFixed(2)} USDC` : ""}</span>
+          <button className="btn sm dark" onClick={() => document.getElementById("roles")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
+            Rolü değiştir
+          </button>
         </div>
       </div>
 

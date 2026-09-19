@@ -68,8 +68,8 @@ export function CreateJob() {
 
   const problems: string[] = [];
   if (!signer) problems.push("Önce bir hesap seç");
-  if (!StrKey.isValidEd25519PublicKey(clientAddr)) problems.push("Müşteri adresi geçersiz");
-  if (clientAddr && clientAddr === signer?.address) problems.push("Müşteri ile ihaleci aynı hesap olamaz");
+  if (!StrKey.isValidEd25519PublicKey(clientAddr)) problems.push("İşveren adresi geçersiz");
+  if (clientAddr && clientAddr === signer?.address) problems.push("İşveren ile ihaleci aynı hesap olamaz");
   if (!(Number(amount) > 0)) problems.push("Tutar 0'dan büyük olmalı");
   if (Math.abs(totalPct - 100) > 1e-9) problems.push(`Payların toplamı %100 olmalı (şu an %${totalPct})`);
   if (stakeholders.some((s) => !(s.percent > 0))) problems.push("Her pay 0'dan büyük olmalı");

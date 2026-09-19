@@ -57,11 +57,11 @@ export interface DemoRole {
 }
 
 export const DEMO_ROLES: DemoRole[] = [
-  { key: "client", label: "Müşteri", emoji: "🏢", hint: "Etkinliği düzenleyen şirket, parayı öder" },
-  { key: "contractor", label: "İhaleci", emoji: "🧑‍💼", hint: "İşi alan taşeron lideri" },
-  { key: "w1", label: "Japonca Tercüman", emoji: "🌏", hint: "Alt çalışan" },
-  { key: "w2", label: "İspanyolca Tercüman", emoji: "🌍", hint: "Alt çalışan" },
-  { key: "arbiter", label: "Hakem", emoji: "⚖️", hint: "Konum anlaşmazlıklarında karar veren platform hakemi" },
+  { key: "client", label: "İşveren", emoji: "🏢", hint: "Parayı yatırır, sahada kodları gösterir" },
+  { key: "contractor", label: "İhaleci", emoji: "🧑‍💼", hint: "İşi ve çalışan paylarını tanımlar" },
+  { key: "w1", label: "Japonca Tercüman", emoji: "🌏", hint: "Kodları okutur, payını alır" },
+  { key: "w2", label: "İspanyolca Tercüman", emoji: "🌍", hint: "Kodları okutur, payını alır" },
+  { key: "arbiter", label: "Hakem", emoji: "⚖️", hint: "Anlaşmazlıkta karar verir" },
 ];
 
 const LS_KEY = "ekisler.demo.v1";

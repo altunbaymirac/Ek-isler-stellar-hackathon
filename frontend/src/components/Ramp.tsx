@@ -67,7 +67,7 @@ export function Ramp() {
       <div className="hero">
         <h1>Türk Lirası ile gir, Türk Lirası ile çık.</h1>
         <p>
-          Müşteri banka havalesiyle TL yatırır, anchor bunu USDC'ye çevirir. Çalışanlar kazandıkları USDC'yi tek tıkla IBAN'larına TL
+          İşveren banka havalesiyle TL yatırır, anchor bunu USDC'ye çevirir. Çalışanlar kazandıkları USDC'yi tek tıkla IBAN'larına TL
           olarak çeker. Akış TR Mock Anchor üzerinden SEP-1, SEP-10, SEP-12, SEP-38 ve SEP-6 standartlarıyla çalışır.
         </p>
       </div>
@@ -161,7 +161,7 @@ function Deposit({ session, onDone }: { session: Session | null; onDone: () => P
         <span className="sep-tag">SEP-6</span>
       </h3>
       <p className="small muted" style={{ margin: 0 }}>
-        Müşteri, işin bedelini banka havalesiyle öder. Anchor kilitli kur üzerinden USDC gönderir.
+        İşveren, işin bedelini banka havalesiyle öder. Anchor kilitli kur üzerinden USDC gönderir.
       </p>
       <label className="field">
         Tutar (TRY)
