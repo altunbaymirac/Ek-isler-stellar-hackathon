@@ -99,14 +99,57 @@ function AppInner() {
     [signer, demo, wallet, balances, refreshBalances, tryPerUsdc, nameOf, jobsVersion],
   );
 
+  const [setupMsg, setSetupMsg] = useState<string | null>(null);
+
+  /**
+   * Demo hesaplarını hazırlar: testnet XLM (Friendbot) + USDC trustline, sonra işverene anchor
+   * üzerinden test USDC'si yükler. Hesaplar tek tek ve tekrar denemeli hazırlanır; Friendbot aynı
+   * anda gelen çok isteği (yeni tarayıcıda 6+ hesap) reddedebiliyor.
+   */
   const prepareAll = async () => {
     const all = [...Object.values(demo), ...(wallet ? [wallet] : [])];
+    const failed: string[] = [];
     try {
-      await Promise.all(all.map((s) => ensureReady(s)));
-      toast("ok", L("Tüm hesaplar testnet XLM ile fonlandı ve USDC trustline açıldı", "All accounts funded with testnet XLM and USDC trustlines opened"));
+      for (const [i, s] of all.entries()) {
+        setSetupMsg(L(`Hesaplar hazırlanıyor ${i + 1}/${all.length} · ${nameOf(s.address)}`, `Setting up accounts ${i + 1}/${all.length} · ${nameOf(s.address)}`));
+        let ok = false;
+        for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          try {
+            await ensureReady(s);
+            ok = true;
+          } catch {
+            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          }
+        }
+        if (!ok) failed.push(nameOf(s.address));
+      }
+      if (failed.length) {
+        toast("err", L(`Hazırlanamayan hesaplar: ${failed.join(", ")}. Testnet yoğun olabilir, tekrar dene.`, `Could not set up: ${failed.join(", ")}. Testnet may be busy, try again.`));
+        return;
+      }
+
+      // İşveren işi fonlayabilsin diye anchor'dan test USDC'si (1000 TL ≈ 20 USDC)
+      const client = demo.client;
+      if (client && Number((await getBalances(client.address)).usdc ?? 0) < 25) {
+        setSetupMsg(L("İşverene anchor üzerinden 1000 TL karşılığı test USDC'si yükleniyor (~30 sn)…", "Loading test USDC worth 1000 TRY to the employer through the anchor (~30 s)…"));
+        try {
+          const info = await anchor.discover();
+          const token = await anchor.login(info, client);
+          await anchor.ensureKyc(info, token, client.address);
+          const dep = await anchor.startDeposit(info, token, client.address, "1000");
+          await anchor.simulateBankTransfer(info, dep.id, "1000");
+          const t = await anchor.pollTx(info, token, dep.id);
+          if (t.status !== "completed") throw new Error(`${L("Anchor işlemi", "Anchor transaction")}: ${t.status}`);
+          toast("ok", L(`İşverene ${Number(t.amount_out).toFixed(2)} USDC yüklendi (SEP-6)`, `${Number(t.amount_out).toFixed(2)} USDC loaded to the employer (SEP-6)`), t.stellar_transaction_id);
+        } catch (e) {
+          toast("err", `${L("Hesaplar hazır ama işverene USDC yüklenemedi; TRY ⇄ USDC sekmesinden elle yükleyebilirsin", "Accounts are ready but loading USDC to the employer failed; you can do it from the TRY ⇄ USDC tab")} · ${friendlyError(e)}`);
+          return;
+        }
+      }
+      toast("ok", L("Tüm demo hesapları hazır: testnet XLM, USDC trustline ve işverende test USDC'si", "All demo accounts are ready: testnet XLM, USDC trustlines and test USDC for the employer"));
+    } finally {
+      setSetupMsg(null);
       await refreshBalances();
-    } catch (e) {
-      toast("err", friendlyError(e));
     }
   };
 
@@ -295,6 +338,11 @@ function AppInner() {
               <small>USDC</small>
             </div>
             <div className="try">{tryValue !== null ? `≈ ₺${tryValue.toLocaleString(locale(), { maximumFractionDigits: 2 })}` : " "}</div>
+            {setupMsg && (
+              <div className="setup-msg" role="status">
+                <span className="spinner" /> {setupMsg}
+              </div>
+            )}
             {needsSetup ? (
               <AsyncButton className="btn" onClick={prepareAll}>
                 {L("Demo hesaplarını hazırla", "Set up demo accounts")}
