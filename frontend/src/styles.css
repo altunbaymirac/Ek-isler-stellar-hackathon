@@ -146,14 +146,15 @@ a:hover { text-decoration: underline; }
 .tab.active { background: var(--ink); color: var(--on-ink); }
 
 /* ================= kahraman + adımlar ================= */
-.hero { display: grid; gap: 10px; margin: 4px 0 6px; }
+.hero { display: grid; gap: 14px; margin: 18px 0 10px; }
 .eyebrow { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--primary); font-weight: 700; }
-.hero h1 { margin: 0; font-family: var(--display); font-size: clamp(1.7rem, 4vw, 2.6rem); letter-spacing: -0.035em; line-height: 1.05; }
-.hero p { margin: 0; color: var(--muted); max-width: 68ch; line-height: 1.55; }
+.hero h1 { margin: 0; font-family: var(--display); font-size: clamp(2rem, 5vw, 3.3rem); letter-spacing: -0.04em; line-height: 1.02; max-width: 18ch; }
+.hero p { margin: 0; color: var(--muted); max-width: 62ch; line-height: 1.6; font-size: 1.04rem; }
 .steps4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 14px 0 6px; }
 @media (max-width: 860px) { .steps4 { grid-template-columns: repeat(2, 1fr); } }
-.step4 { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
-.step4 .tag { font-family: var(--display); font-weight: 700; font-size: 0.8rem; color: var(--primary); }
+.step4 { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; transition: transform 0.15s, box-shadow 0.15s; }
+.step4:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.step4 .tag { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-weight: 600; font-size: 0.74rem; color: var(--primary); letter-spacing: 0.04em; }
 .step4 .title { font-weight: 700; }
 .step4 .desc { font-size: 0.84rem; color: var(--muted); line-height: 1.4; }
 .step4.final { background: var(--mint-soft); border-color: #c4ead9; }
@@ -283,3 +284,59 @@ table.tx th { color: var(--muted); font-weight: 600; border-top: 0; }
   .card { padding: 18px; }
   .balance-card .big { font-size: 1.9rem; }
 }
+
+/* ================= ikonlar, dil, zincir kaydı ================= */
+.btn svg, .tab svg, .badge svg { flex: none; }
+.btn.icon { padding: 6px; }
+.panel-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.panel-title > svg { color: var(--primary); flex: none; }
+
+a.net-pill { color: var(--mint); text-decoration: none; transition: background 0.15s; }
+a.net-pill:hover { background: rgba(159, 224, 196, 0.24); text-decoration: none; }
+.lang { display: inline-flex; padding: 3px; border-radius: 999px; border: 1px solid var(--ink-3); background: var(--ink-2); }
+.lang button { border: 0; background: transparent; color: var(--on-ink-muted); font: inherit; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+.lang button.active { background: var(--on-ink); color: var(--ink); }
+.lang button:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
+
+.role-icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.07); color: var(--mint); }
+.role.active .role-icon { background: var(--primary-soft); color: var(--primary); }
+.role-check { display: inline-flex; align-items: center; gap: 3px; }
+.rolebar .emoji { color: var(--primary); }
+.acct .emoji { color: var(--mint); }
+.acct.active .emoji { color: var(--primary); }
+
+.tranches { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.tranche { display: inline-flex; align-items: center; gap: 4px; font-size: 0.76rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.tranche.paid { background: var(--mint-soft); color: var(--ok); }
+.tranche.disputed { background: var(--err-soft); color: var(--err); }
+a.tranche:hover { text-decoration: none; box-shadow: inset 0 0 0 1px currentColor; }
+
+.chain-link { display: inline-flex; align-items: center; gap: 5px; font-size: 0.74rem; font-weight: 600; color: var(--ok); white-space: nowrap; font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; }
+.chain-link:hover { text-decoration: underline; }
+.chain-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--mint-soft); }
+.step .chain-link { margin-top: -2px; }
+
+.chainlog { margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.chainlog summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; display: flex; align-items: center; gap: 6px; list-style: none; color: var(--text); }
+.chainlog summary::-webkit-details-marker { display: none; }
+.chainlog summary > svg { color: var(--ok); }
+.chainlog summary::after { content: "+"; margin-left: auto; color: var(--muted); font-weight: 500; }
+.chainlog[open] summary::after { content: "–"; }
+.chainlog ol { list-style: none; margin: 10px 0 8px; padding: 0 0 0 14px; border-left: 2px solid var(--mint-soft); display: flex; flex-direction: column; gap: 8px; }
+.chainlog li { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: baseline; font-size: 0.85rem; position: relative; }
+.chainlog li::before { content: ""; position: absolute; left: -19px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.chainlog .t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.78rem; }
+@media (max-width: 640px) { .chainlog li { grid-template-columns: 1fr auto; } .chainlog .t { grid-column: 1 / -1; } }
+
+.toast { align-items: flex-start; }
+.toast-icon { flex: none; margin-top: 1px; }
+.toast.ok .toast-icon { color: var(--mint); }
+
+/* ---- QR okuyucu (Mehmet Emin) ---- */
+.scanner { display: flex; flex-direction: column; gap: 10px; }
+.scanner-view { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
+.scanner-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Çalışana nereye tutacağını gösteren çerçeve; taramayı kısıtlamaz, kare tamamı okunur. */
+.scanner-frame { position: absolute; inset: 14%; border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 14px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.28); pointer-events: none; }
+.scanner-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: #fff; font-size: 0.88rem; }
+.scanner summary { cursor: pointer; }

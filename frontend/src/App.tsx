@@ -1,19 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, RefreshCw, Wallet } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppCtx, type AppState, type Tab } from "./app-context.tsx";
 import { CreateJob } from "./components/CreateJob.tsx";
 import { Jobs } from "./components/Jobs.tsx";
 import { Ramp } from "./components/Ramp.tsx";
-import { AsyncButton, useToast } from "./components/ui.tsx";
+import { AsyncButton, RoleIcon, useToast } from "./components/ui.tsx";
 import * as anchor from "./lib/anchor.ts";
 import { CONTRACT_ID, expertAccount } from "./lib/config.ts";
 import { friendlyError } from "./lib/contract.ts";
 import { ensureReady, getBalances, type Balances } from "./lib/horizon.ts";
+import { getLang, L, locale, setLang, subscribeLang } from "./lib/i18n.ts";
 import { short, type Signer } from "./lib/signer.ts";
-import { connectWallet, DEMO_ROLES, disconnectWallet, loadDemoSigners } from "./lib/wallet.ts";
+import { connectWallet, DEMO_ROLES, disconnectWallet, loadDemoSigners, roleText } from "./lib/wallet.ts";
 
 const LS_ACTIVE = "ekisler.active";
 
 export default function App() {
+  const lang = useSyncExternalStore(subscribeLang, getLang);
+  // Dil değişince tüm ağaç yeniden kurulur; L() her render'da güncel dili okur
+  return <AppInner key={lang} />;
+}
+
+function AppInner() {
+  const lang = getLang();
   const toast = useToast();
   const [demo] = useState(loadDemoSigners);
   const [wallet, setWallet] = useState<Signer | null>(null);
@@ -65,8 +74,8 @@ export default function App() {
   const nameOf = useCallback(
     (address: string) => {
       const role = DEMO_ROLES.find((r) => demo[r.key]?.address === address);
-      if (role) return `${role.emoji} ${role.label}`;
-      if (wallet?.address === address) return "👛 Cüzdanım";
+      if (role) return roleText(role).label;
+      if (wallet?.address === address) return L("Cüzdanım", "My wallet");
       return short(address);
     },
     [demo, wallet],
@@ -92,7 +101,7 @@ export default function App() {
     const all = [...Object.values(demo), ...(wallet ? [wallet] : [])];
     try {
       await Promise.all(all.map((s) => ensureReady(s)));
-      toast("ok", "Tüm hesaplar testnet XLM ile fonlandı ve USDC trustline açıldı");
+      toast("ok", L("Tüm hesaplar testnet XLM ile fonlandı ve USDC trustline açıldı", "All accounts funded with testnet XLM and USDC trustlines opened"));
       await refreshBalances();
     } catch (e) {
       toast("err", friendlyError(e));
@@ -119,21 +128,26 @@ export default function App() {
             <div className="brand-mark">Eİ</div>
             <div>
               <div className="brand-name">Ek İşler</div>
-              <div className="brand-sub">Kısa süreli işlerde güvenli ödeme</div>
+              <div className="brand-sub">{L("Kısa süreli işlerde güvenli ödeme", "Safe pay for short-term gigs")}</div>
             </div>
           </div>
           <div className="spacer" />
-          <span className="net-pill">Stellar Testnet</span>
+          <a className="net-pill" href={expertAccount(CONTRACT_ID)} target="_blank" rel="noreferrer" title={L("Ek İşler kontratını zincirde gör", "View the Ek İşler contract on-chain")}>
+            Stellar Testnet · {L("kontrat", "contract")} {CONTRACT_ID.slice(0, 4)}…{CONTRACT_ID.slice(-4)} ↗
+          </a>
+          <div className="lang" role="group" aria-label="Language">
+            {(["tr", "en"] as const).map((l) => (
+              <button key={l} className={lang === l ? "active" : ""} aria-pressed={lang === l} onClick={() => setLang(l)}>
+                {l.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </header>
 
         <div className="band-grid">
           <div id="roles">
-            <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-              <div className="who-label" style={{ margin: 0 }}>
-                Demo rolünü seç · aynı tarayıcıda tüm tarafları oynayabilirsin
-              </div>
-            </div>
-            <div className="roles" role="radiogroup" aria-label="Aktif rol">
+            <div className="who-label">{L("Demo rolünü seç · aynı tarayıcıda tüm tarafları oynayabilirsin", "Pick a demo role · you can play every party in one browser")}</div>
+            <div className="roles" role="radiogroup" aria-label={L("Aktif rol", "Active role")}>
               {DEMO_ROLES.map((r) => {
                 const active = activeKey === r.key;
                 return (
@@ -148,20 +162,24 @@ export default function App() {
                     }}
                   >
                     <span className="role-top">
-                      <span className="emoji" aria-hidden="true">
-                        {r.emoji}
+                      <span className="role-icon">
+                        <RoleIcon role={r.key} />
                       </span>
-                      {active && <span className="role-check">✓ Seçili</span>}
+                      {active && (
+                        <span className="role-check">
+                          <Check size={12} strokeWidth={3} /> {L("Seçili", "Selected")}
+                        </span>
+                      )}
                     </span>
-                    <span className="name">{r.label}</span>
-                    <span className="hint">{r.hint}</span>
+                    <span className="name">{roleText(r).label}</span>
+                    <span className="hint">{roleText(r).hint}</span>
                   </button>
                 );
               })}
             </div>
             <div className="row" style={{ marginTop: 12 }}>
               <span className="small" style={{ color: "var(--on-ink-muted)" }}>
-                veya
+                {L("veya", "or")}
               </span>
               {wallet ? (
                 <button
@@ -170,26 +188,32 @@ export default function App() {
                   className={`acct ${activeKey === "wallet" ? "active" : ""}`}
                   onClick={() => selectAccount("wallet")}
                 >
-                  <span className="emoji">👛</span>
-                  <span className="name">Cüzdanım · {short(wallet.address)}</span>
+                  <span className="emoji">
+                    <Wallet size={17} />
+                  </span>
+                  <span className="name">
+                    {L("Cüzdanım", "My wallet")} · {short(wallet.address)}
+                  </span>
                 </button>
               ) : (
                 <AsyncButton
                   className="acct connect"
-                  title="Freighter, xBull, Lobstr ve diğer Stellar cüzdanları"
+                  title={L("Freighter, xBull, Lobstr ve diğer Stellar cüzdanları", "Freighter, xBull, Lobstr and other Stellar wallets")}
                   onClick={async () => {
                     try {
                       const w = await connectWallet();
                       setWallet(w);
                       selectAccount("wallet");
-                      toast("ok", `Cüzdan bağlandı: ${short(w.address)}`);
+                      toast("ok", `${L("Cüzdan bağlandı", "Wallet connected")}: ${short(w.address)}`);
                     } catch (e) {
                       toast("err", friendlyError(e));
                     }
                   }}
                 >
-                  <span className="emoji">👛</span>
-                  <span className="name">Kendi cüzdanını bağla</span>
+                  <span className="emoji">
+                    <Wallet size={17} />
+                  </span>
+                  <span className="name">{L("Kendi cüzdanını bağla", "Connect your own wallet")}</span>
                 </AsyncButton>
               )}
             </div>
@@ -197,17 +221,17 @@ export default function App() {
 
           <div className="balance-card">
             <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="label">Bakiye</span>
+              <span className="label">{L("Bakiye", "Balance")}</span>
               <span className="who small">{signer ? nameOf(signer.address) : "—"}</span>
             </div>
             <div className="big">
               {balances === null ? "…" : balances.usdc != null ? Number(balances.usdc).toFixed(2) : "0.00"}
               <small>USDC</small>
             </div>
-            <div className="try">{tryValue !== null ? `≈ ₺${tryValue.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}` : " "}</div>
+            <div className="try">{tryValue !== null ? `≈ ₺${tryValue.toLocaleString(locale(), { maximumFractionDigits: 2 })}` : " "}</div>
             {needsSetup ? (
               <AsyncButton className="btn" onClick={prepareAll}>
-                Demo hesaplarını hazırla
+                {L("Demo hesaplarını hazırla", "Set up demo accounts")}
               </AsyncButton>
             ) : (
               <div className="foot">
@@ -218,11 +242,11 @@ export default function App() {
                 )}
                 {balances && <span>· {balances.funded ? Number(balances.xlm).toFixed(0) : "0"} XLM</span>}
                 <div className="spacer" />
-                <AsyncButton className="btn ghost sm" onClick={prepareAll} title="Tüm demo hesaplarını fonla ve trustline aç">
-                  Hazırla
+                <AsyncButton className="btn ghost sm" onClick={prepareAll} title={L("Tüm demo hesaplarını fonla ve trustline aç", "Fund every demo account and open trustlines")}>
+                  {L("Hazırla", "Set up")}
                 </AsyncButton>
-                <AsyncButton className="btn ghost sm" onClick={refreshBalances} title="Bakiyeyi yenile">
-                  ↻
+                <AsyncButton className="btn ghost sm" onClick={refreshBalances} title={L("Bakiyeyi yenile", "Refresh balance")}>
+                  <RefreshCw size={15} />
                 </AsyncButton>
                 {activeKey === "wallet" && wallet && (
                   <button
@@ -233,7 +257,7 @@ export default function App() {
                       selectAccount("contractor");
                     }}
                   >
-                    Çıkış
+                    {L("Çıkış", "Disconnect")}
                   </button>
                 )}
               </div>
@@ -245,16 +269,21 @@ export default function App() {
       <div className="rolebar" role="status">
         <div className="rolebar-inner">
           <span className="emoji" aria-hidden="true">
-            {activeRole?.emoji ?? "👛"}
+            <RoleIcon role={activeRole?.key} size={17} />
           </span>
           <span>
-            Şu an <b>{activeRole?.label ?? "Cüzdanım"}</b> olarak görüyorsun
-            <span className="rolebar-hint"> · {activeRole?.hint ?? "Kendi cüzdanınla herhangi bir rolü oynayabilirsin"}</span>
+            {L("Şu an ", "Viewing as ")}
+            <b>{activeRole ? roleText(activeRole).label : L("Cüzdanım", "My wallet")}</b>
+            {L(" olarak görüyorsun", "")}
+            <span className="rolebar-hint">
+              {" "}
+              · {activeRole ? roleText(activeRole).hint : L("Kendi cüzdanınla herhangi bir rolü oynayabilirsin", "Your own wallet can play any role")}
+            </span>
           </span>
           <div className="spacer" />
           <span className="rolebar-bal">{balances?.usdc != null ? `${Number(balances.usdc).toFixed(2)} USDC` : ""}</span>
           <button className="btn sm dark" onClick={() => document.getElementById("roles")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
-            Rolü değiştir
+            {L("Rolü değiştir", "Switch role")}
           </button>
         </div>
       </div>
@@ -263,9 +292,9 @@ export default function App() {
         <nav className="tabs" role="tablist">
           {(
             [
-              ["jobs", "İşler"],
-              ["create", "Yeni iş"],
-              ["ramp", "TL ⇄ USDC"],
+              ["jobs", L("İşler", "Jobs")],
+              ["create", L("Yeni iş", "New job")],
+              ["ramp", "TRY ⇄ USDC"],
             ] as [Tab, string][]
           ).map(([k, label]) => (
             <button key={k} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => setTab(k)}>
@@ -278,10 +307,14 @@ export default function App() {
         {tab === "create" && <CreateJob />}
         {tab === "ramp" && <Ramp />}
 
-        <footer className="small muted" style={{ marginTop: 48, textAlign: "center" }}>
-          Para Ek İşler'de değil, her iş için açılan Trustless Work escrow'unda durur ·{" "}
+        <footer className="small muted" style={{ marginTop: 56, textAlign: "center" }}>
+          {L(
+            "Para Ek İşler'de değil, her paydaş için açılan Trustless Work escrow'unda durur",
+            "The money never sits with Ek İşler; it stays in a Trustless Work escrow opened for each stakeholder",
+          )}{" "}
+          ·{" "}
           <a href={expertAccount(CONTRACT_ID)} target="_blank" rel="noreferrer">
-            Ek İşler kontratı ↗
+            {L("Ek İşler kontratı", "Ek İşler contract")} ↗
           </a>
         </footer>
       </main>

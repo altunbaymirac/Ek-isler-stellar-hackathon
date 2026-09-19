@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import { CONTRACT_ID } from "./config.ts";
+import { L } from "./i18n.ts";
 
 /**
  * Ödeme dilimi kodları.
@@ -10,6 +11,10 @@ import { CONTRACT_ID } from "./config.ts";
 
 export const TRANCHE_LABELS = ["Kod 1 · Varış (kapora)", "Kod 2 · Devam kontrolü", "QR · Gün sonu"] as const;
 export const TRANCHE_SHORT = ["Kod 1", "Kod 2", "QR"] as const;
+const TRANCHE_LABELS_EN = ["Code 1 · Arrival (deposit)", "Code 2 · Still on site", "QR · End of day"] as const;
+const TRANCHE_SHORT_EN = ["Code 1", "Code 2", "QR"] as const;
+export const trancheLabel = (t: number) => L(TRANCHE_LABELS[t], TRANCHE_LABELS_EN[t]);
+export const trancheShort = (t: number) => L(TRANCHE_SHORT[t], TRANCHE_SHORT_EN[t]);
 export const TRANCHES = 3;
 
 const key = (jobId: bigint | number) => `ekisler.codes.${CONTRACT_ID}.${jobId}`;

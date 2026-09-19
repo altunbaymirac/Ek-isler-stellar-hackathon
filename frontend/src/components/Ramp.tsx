@@ -4,6 +4,7 @@ import * as anchor from "../lib/anchor.ts";
 import { expertTx } from "../lib/config.ts";
 import { friendlyError } from "../lib/contract.ts";
 import { ensureReady } from "../lib/horizon.ts";
+import { L, locale } from "../lib/i18n.ts";
 import { AsyncButton, useToast } from "./ui.tsx";
 
 interface Session {
@@ -54,21 +55,24 @@ export function Ramp() {
       sessions.set(signer.address, s);
       setSession(s);
       refreshBalances();
-      toast("ok", `Anchor oturumu açıldı · KYC: ${kyc}`);
+      toast("ok", `${L("Anchor oturumu açıldı", "Anchor session opened")} · KYC: ${kyc}`);
     } catch (e) {
       toast("err", friendlyError(e));
     }
   };
 
-  if (!signer) return <div className="card empty">Önce bir hesap seç.</div>;
+  if (!signer) return <div className="card empty">{L("Önce bir hesap seç.", "Pick an account first.")}</div>;
 
   return (
     <div className="stack">
       <div className="hero">
-        <h1>Türk Lirası ile gir, Türk Lirası ile çık.</h1>
+        <span className="eyebrow">{L("Türk Lirası köprüsü", "Turkish lira ramp")}</span>
+        <h1>{L("Türk Lirası ile gir, Türk Lirası ile çık.", "Lira in, lira out.")}</h1>
         <p>
-          İşveren banka havalesiyle TL yatırır, anchor bunu USDC'ye çevirir. Çalışanlar kazandıkları USDC'yi tek tıkla IBAN'larına TL
-          olarak çeker. Akış TR Mock Anchor üzerinden SEP-1, SEP-10, SEP-12, SEP-38 ve SEP-6 standartlarıyla çalışır.
+          {L(
+            "İşveren banka havalesiyle TL yatırır, anchor bunu USDC'ye çevirir. Çalışanlar kazandıkları USDC'yi tek tıkla IBAN'larına TL olarak çeker. Akış TR Mock Anchor üzerinden SEP-1, SEP-10, SEP-12, SEP-38 ve SEP-6 standartlarıyla çalışır.",
+            "The employer pays in TRY by bank transfer and the anchor converts it to USDC. Workers withdraw what they earned to their IBAN in TRY with one click. It runs on the TR Mock Anchor using SEP-1, SEP-10, SEP-12, SEP-38 and SEP-6.",
+          )}
         </p>
       </div>
 
@@ -76,21 +80,24 @@ export function Ramp() {
         <div className="vstep-row row">
           <div>
             <h3 style={{ margin: 0 }}>
-              1 · Anchor'a giriş <span className="sep-tag">SEP-10</span>
+              1 · {L("Anchor'a giriş", "Sign in to the anchor")} <span className="sep-tag">SEP-10</span>
               <span className="sep-tag">SEP-12</span>
             </h3>
             <div className="small muted">
-              {nameOf(signer.address)} hesabı, anchor'ın gönderdiği challenge işlemini imzalayarak kimliğini kanıtlar.
+              {L(
+                `${nameOf(signer.address)} hesabı, anchor'ın gönderdiği challenge işlemini imzalayarak kimliğini kanıtlar.`,
+                `The ${nameOf(signer.address)} account proves who it is by signing the anchor's challenge transaction.`,
+              )}
             </div>
           </div>
           <div className="spacer" />
           {session ? (
             <span className="row" style={{ gap: 6 }}>
-              <span className="badge ok">✓ JWT alındı</span>
+              <span className="badge ok">{L("JWT alındı", "JWT received")}</span>
               <span className={`badge ${session.kyc === "ACCEPTED" ? "ok" : "warn"}`}>KYC: {session.kyc}</span>
             </span>
           ) : (
-            <AsyncButton onClick={login}>Cüzdanla giriş yap</AsyncButton>
+            <AsyncButton onClick={login}>{L("Cüzdanla giriş yap", "Sign in with wallet")}</AsyncButton>
           )}
         </div>
       </section>
@@ -145,10 +152,10 @@ function Deposit({ session, onDone }: { session: Session | null; onDone: () => P
       await anchor.simulateBankTransfer(session.info, dep.id, amount);
       const t = await anchor.pollTx(session.info, session.token, dep.id, setStatus);
       if (t.status === "completed") {
-        toast("ok", `${Number(t.amount_out).toFixed(2)} USDC hesabına geçti`, t.stellar_transaction_id);
+        toast("ok", L(`${Number(t.amount_out).toFixed(2)} USDC hesabına geçti`, `${Number(t.amount_out).toFixed(2)} USDC reached your account`), t.stellar_transaction_id);
         setDep(null);
         await onDone();
-      } else toast("err", `Anchor işlemi: ${t.status} ${t.message ?? ""}`);
+      } else toast("err", `${L("Anchor işlemi", "Anchor transaction")}: ${t.status} ${t.message ?? ""}`);
     } catch (e) {
       toast("err", friendlyError(e));
     }
@@ -157,43 +164,43 @@ function Deposit({ session, onDone }: { session: Session | null; onDone: () => P
   return (
     <section className="card stack">
       <h3 style={{ margin: 0 }}>
-        2 · TL yatır → USDC al <span className="sep-tag">SEP-38</span>
+        2 · {L("TL yatır → USDC al", "Pay TRY → get USDC")} <span className="sep-tag">SEP-38</span>
         <span className="sep-tag">SEP-6</span>
       </h3>
       <p className="small muted" style={{ margin: 0 }}>
-        İşveren, işin bedelini banka havalesiyle öder. Anchor kilitli kur üzerinden USDC gönderir.
+        {L("İşveren, işin bedelini banka havalesiyle öder. Anchor kilitli kur üzerinden USDC gönderir.", "The employer pays for the job by bank transfer. The anchor sends USDC at a locked rate.")}
       </p>
       <label className="field">
-        Tutar (TRY)
+        {L("Tutar (TRY)", "Amount (TRY)")}
         <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(",", "."))} disabled={!session || !!dep} />
       </label>
       {quote && (
         <dl className="kv">
-          <dt>Alacağın</dt>
+          <dt>{L("Alacağın", "You get")}</dt>
           <dd>{Number(quote.buy_amount).toFixed(2)} USDC</dd>
-          <dt>Kur</dt>
+          <dt>{L("Kur", "Rate")}</dt>
           <dd>1 USDC = ₺{Number(quote.price).toFixed(2)}</dd>
-          <dt>Ücret</dt>
+          <dt>{L("Ücret", "Fee")}</dt>
           <dd>₺{quote.fee?.total ?? "0"} (spread)</dd>
         </dl>
       )}
       {!dep ? (
         <AsyncButton disabled={!session || !(Number(amount) > 0)} onClick={start}>
-          Havale talimatı al
+          {L("Havale talimatı al", "Get transfer instructions")}
         </AsyncButton>
       ) : (
         <>
           <div className="callout">
             <dl className="kv">
-              <dt>Banka</dt>
+              <dt>{L("Banka", "Bank")}</dt>
               <dd>{dep.bank}</dd>
               <dt>IBAN</dt>
               <dd className="mono">{dep.iban}</dd>
-              <dt>Açıklama</dt>
+              <dt>{L("Açıklama", "Reference")}</dt>
               <dd className="mono">{dep.reference}</dd>
               {dep.quote?.id && (
                 <>
-                  <dt>Kur teklifi</dt>
+                  <dt>{L("Kur teklifi", "Quote")}</dt>
                   <dd className="mono">{dep.quote.id}</dd>
                 </>
               )}
@@ -201,10 +208,10 @@ function Deposit({ session, onDone }: { session: Session | null; onDone: () => P
           </div>
           <div className="row">
             <AsyncButton className="btn ok" onClick={simulate}>
-              Havaleyi gönder (sandbox)
+              {L("Havaleyi gönder (sandbox)", "Send the transfer (sandbox)")}
             </AsyncButton>
             <button className="btn ghost sm" onClick={() => setDep(null)}>
-              Vazgeç
+              {L("Vazgeç", "Cancel")}
             </button>
             {status && <span className="badge primary">{status.status}</span>}
           </div>
@@ -245,14 +252,14 @@ function Withdraw({ session, usdc, onDone }: { session: Session | null; usdc: st
         kycIban.current = clean;
       }
       const { id, hash } = await anchor.withdraw(session.info, session.token, signer, amount);
-      toast("info", "USDC anchor'a gönderildi, TL ödemesi bekleniyor", hash);
+      toast("info", L("USDC anchor'a gönderildi, TL ödemesi bekleniyor", "USDC sent to the anchor, waiting for the TRY payout"), hash);
       await onDone();
       const t = await anchor.pollTx(session.info, session.token, id, setStatus);
       if (t.status === "completed") {
-        toast("ok", `₺${t.amount_out} IBAN'ına gönderildi`);
+        toast("ok", L(`₺${t.amount_out} IBAN'ına gönderildi`, `₺${t.amount_out} sent to your IBAN`));
         setAmount("");
         await onDone();
-      } else toast("err", `Anchor işlemi: ${t.status} ${t.message ?? ""}`);
+      } else toast("err", `${L("Anchor işlemi", "Anchor transaction")}: ${t.status} ${t.message ?? ""}`);
     } catch (e) {
       toast("err", friendlyError(e));
     }
@@ -261,14 +268,14 @@ function Withdraw({ session, usdc, onDone }: { session: Session | null; usdc: st
   return (
     <section className="card stack">
       <h3 style={{ margin: 0 }}>
-        3 · USDC → TL olarak IBAN'a çek <span className="sep-tag">SEP-38</span>
+        3 · {L("USDC → TL olarak IBAN'a çek", "USDC → withdraw to IBAN in TRY")} <span className="sep-tag">SEP-38</span>
         <span className="sep-tag">SEP-6</span>
       </h3>
       <p className="small muted" style={{ margin: 0 }}>
-        Çalışan, kontrattan gelen payını TL'ye çevirip banka hesabına çeker.
+        {L("Çalışan, kontrattan gelen payını TL'ye çevirip banka hesabına çeker.", "The worker converts their share to TRY and withdraws it to their bank account.")}
       </p>
       <label className="field">
-        Tutar (USDC)
+        {L("Tutar (USDC)", "Amount (USDC)")}
         <span className="row" style={{ flexWrap: "nowrap" }}>
           <input
             style={{ flex: 1 }}
@@ -279,27 +286,27 @@ function Withdraw({ session, usdc, onDone }: { session: Session | null; usdc: st
             placeholder="0.00"
           />
           <button className="btn secondary sm" disabled={!session || !usdc} onClick={() => setAmount(Number(usdc).toFixed(7).replace(/\.?0+$/, ""))}>
-            Tümü
+            {L("Tümü", "All")}
           </button>
         </span>
-        {tooMuch && <span className="small" style={{ color: "var(--err)" }}>Bakiyen {Number(usdc).toFixed(2)} USDC</span>}
+        {tooMuch && <span className="small" style={{ color: "var(--err)" }}>{L("Bakiyen", "Your balance is")} {Number(usdc).toFixed(2)} USDC</span>}
       </label>
       <label className="field">
         IBAN
         <input className="mono" value={iban} onChange={(e) => setIban(e.target.value)} disabled={!session} />
-        {!ibanOk && <span className="small" style={{ color: "var(--err)" }}>Geçerli bir TR IBAN gir</span>}
+        {!ibanOk && <span className="small" style={{ color: "var(--err)" }}>{L("Geçerli bir TR IBAN gir", "Enter a valid TR IBAN")}</span>}
       </label>
       {quote && (
         <dl className="kv">
-          <dt>Hesabına geçecek</dt>
-          <dd>₺{Number(quote.buy_amount).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</dd>
-          <dt>Ücret</dt>
+          <dt>{L("Hesabına geçecek", "You receive")}</dt>
+          <dd>₺{Number(quote.buy_amount).toLocaleString(locale(), { minimumFractionDigits: 2 })}</dd>
+          <dt>{L("Ücret", "Fee")}</dt>
           <dd>{Number(quote.fee?.total ?? 0).toFixed(4)} USDC</dd>
         </dl>
       )}
       <div className="row">
         <AsyncButton disabled={!session || !(Number(amount) > 0) || !ibanOk || tooMuch} onClick={go}>
-          TL olarak çek
+          {L("TL olarak çek", "Withdraw as TRY")}
         </AsyncButton>
         {status && <span className="badge primary">{status.status}</span>}
       </div>
@@ -318,37 +325,37 @@ function History({ session, version }: { session: Session; version: number }) {
   return (
     <section className="card">
       <div className="row">
-        <h3 style={{ margin: 0 }}>Anchor işlem geçmişi</h3>
+        <h3 style={{ margin: 0 }}>{L("Anchor işlem geçmişi", "Anchor transaction history")}</h3>
         <div className="spacer" />
         <AsyncButton className="btn secondary sm" onClick={load}>
-          Yenile
+          {L("Yenile", "Refresh")}
         </AsyncButton>
       </div>
       {!txs?.length ? (
-        <div className="empty small">Henüz işlem yok.</div>
+        <div className="empty small">{L("Henüz işlem yok.", "No transactions yet.")}</div>
       ) : (
         <div className="table-wrap">
           <table className="tx">
             <thead>
               <tr>
-                <th>Tür</th>
-                <th>Durum</th>
-                <th>Giren</th>
-                <th>Çıkan</th>
-                <th>Zaman</th>
+                <th>{L("Tür", "Type")}</th>
+                <th>{L("Durum", "Status")}</th>
+                <th>{L("Giren", "In")}</th>
+                <th>{L("Çıkan", "Out")}</th>
+                <th>{L("Zaman", "Time")}</th>
                 <th>Stellar tx</th>
               </tr>
             </thead>
             <tbody>
               {txs.map((t) => (
                 <tr key={t.id}>
-                  <td>{t.kind.startsWith("deposit") ? "TL → USDC" : "USDC → TL"}</td>
+                  <td>{t.kind.startsWith("deposit") ? "TRY → USDC" : "USDC → TRY"}</td>
                   <td>
                     <span className={`badge ${t.status === "completed" ? "ok" : t.status === "error" ? "err" : "warn"}`}>{t.status}</span>
                   </td>
                   <td>{t.amount_in ?? "—"}</td>
                   <td>{t.amount_out ?? "—"}</td>
-                  <td>{t.started_at ? new Date(t.started_at).toLocaleString("tr-TR") : "—"}</td>
+                  <td>{t.started_at ? new Date(t.started_at).toLocaleString(locale()) : "—"}</td>
                   <td>
                     {t.stellar_transaction_id ? (
                       <a href={expertTx(t.stellar_transaction_id)} target="_blank" rel="noreferrer" className="mono">
