@@ -131,6 +131,7 @@ export default function App() {
               className={`acct ${activeKey === r.key ? "active" : ""}`}
               onClick={() => selectAccount(r.key)}
               title={r.hint}
+              aria-label={`${r.label}: ${r.hint}`}
             >
               <span className="emoji">{r.emoji}</span>
               <span>

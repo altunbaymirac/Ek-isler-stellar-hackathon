@@ -9,6 +9,7 @@ import * as anchor from "../src/lib/anchor.ts";
 import * as c from "../src/lib/contract.ts";
 import { ensureReady, getBalances } from "../src/lib/horizon.ts";
 import { keypairSigner } from "../src/lib/signer.ts";
+import { makeCodes } from "../src/lib/codes.ts";
 
 const log = (...a: unknown[]) => console.log("•", ...a);
 
@@ -16,6 +17,7 @@ const client = keypairSigner(Keypair.random(), "Müşteri");
 const contractor = keypairSigner(Keypair.random(), "İhaleci");
 const w1 = keypairSigner(Keypair.random(), "Japonca tercüman");
 const w2 = keypairSigner(Keypair.random(), "İspanyolca tercüman");
+const arbiter = keypairSigner(Keypair.random(), "Hakem");
 const all = [client, contractor, w1, w2];
 
 log("Hesaplar fonlanıyor + USDC trustline açılıyor…");
@@ -51,19 +53,24 @@ log("Müşteri USDC:", bal.usdc);
 const total = (Math.floor(Number(bal.usdc) * 100) / 100).toFixed(2);
 const created = await c.createJob(contractor, {
   client: client.address,
+  arbiter: arbiter.address,
   totalUsdc: total,
-  stakeholders: [
+  shares: [
     { address: contractor.address, share_bps: 5000 },
     { address: w1.address, share_bps: 3200 },
     { address: w2.address, share_bps: 1800 },
   ],
   deadline: new Date(Date.now() + 2 * 24 * 3600 * 1000),
+  arrivalPct: 20,
+  midPct: 50,
+  venue: { lat: 41.0339, lng: 28.9772, radiusM: 300 },
 });
 const id = created.result;
 log(`create_job #${id} (${total} USDC)`, created.hash);
 
+const { codes, commitments } = await makeCodes(3);
 try {
-  await c.depositJob(client, id);
+  await c.depositJob(client, id, commitments);
   throw new Error("HATA: onaysız deposit geçti!");
 } catch (e) {
   log("Onaysız deposit reddedildi ✓", c.friendlyError(e));
@@ -71,9 +78,29 @@ try {
 
 log("accept w1", (await c.acceptJob(w1, id)).hash);
 log("accept w2", (await c.acceptJob(w2, id)).hash);
-log("durum:", c.STATUS_LABEL[(await c.getJob(id)).status]);
-log("deposit", (await c.depositJob(client, id)).hash);
+log("deposit + kod hash'leri", (await c.depositJob(client, id, commitments)).hash);
+
+// w1: işveren varış ve mesai QR'larını gösterir
+const a = await c.claimTranche(w1, id, 0, codes[1 * 3 + 0]);
+log("w1 varış QR →", c.fromUnits(a.result, 4), "USDC", a.hash);
+try {
+  await c.claimTranche(w1, id, 1, codes[2 * 3 + 1]);
+  throw new Error("HATA: başkasının kodu geçti!");
+} catch (e) {
+  log("Başka çalışanın kodu reddedildi ✓", c.friendlyError(e));
+}
+const m = await c.claimTranche(w1, id, 1, codes[1 * 3 + 1]);
+log("w1 mesai QR →", c.fromUnits(m.result, 4), "USDC", m.hash);
+
+// w2: işveren varış kodunu vermiyor → konum kanıtı + hakem
+log("w2 konum kanıtı", (await c.submitLocation(w2, id, 41.03395, 28.97725)).hash);
+await ensureReady(arbiter);
+const r = await c.arbiterRelease(arbiter, id, w2.address, 0);
+log("hakem w2 kaporasını açtı →", c.fromUnits(r.result, 4), "USDC", r.hash);
+
 log("complete_and_split", (await c.completeJob(client, id)).hash);
+const job = await c.getJob(id);
+log("durum:", c.STATUS_LABEL[job.status], "· konum kanıtı:", job.locations.length);
 
 for (const s of all) log(s.label, (await getBalances(s.address)).usdc, "USDC");
 

@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { contract } from "@stellar/stellar-sdk";
 import { CONTRACT_ID, NETWORK_PASSPHRASE, RPC_URL, USDC_DECIMALS, USDC_SAC } from "./config.ts";
 import type { Signer } from "./signer.ts";
@@ -14,26 +15,48 @@ export const JobStatus = {
 export const STATUS_LABEL: Record<number, string> = {
   0: "Çalışan onayı bekleniyor",
   1: "Onaylandı · Fonlama bekleniyor",
-  2: "Escrow'da kilitli",
-  3: "Ödendi",
-  4: "İade edildi",
+  2: "Escrow'da · iş sürüyor",
+  3: "Kapandı",
+  4: "İptal edildi",
 };
 
 export interface Stakeholder {
   address: string;
   share_bps: number;
   accepted: boolean;
+  paid: bigint;
+  released: number; // dilim bit maskesi
+}
+
+export interface LocationProof {
+  worker: string;
+  lat_e6: bigint;
+  lng_e6: bigint;
+  timestamp: bigint;
+}
+
+export interface JobTerms {
+  client: string;
+  arbiter: string;
+  token: string;
+  total_amount: bigint;
+  shares: { address: string; share_bps: number }[];
+  deadline: bigint;
+  arrival_bps: number;
+  mid_bps: number;
+  venue_lat_e6: bigint;
+  venue_lng_e6: bigint;
+  radius_m: number;
 }
 
 export interface Job {
   id: bigint;
-  client: string;
   contractor: string;
-  token: string;
-  total_amount: bigint;
+  terms: JobTerms;
   stakeholders: Stakeholder[];
   status: number;
-  deadline: bigint;
+  commitments: Buffer[];
+  locations: LocationProof[];
 }
 
 const ERRORS: Record<number, string> = {
@@ -47,6 +70,12 @@ const ERRORS: Record<number, string> = {
   8: "Aynı adres iki kez eklenmiş",
   9: "Son tarih gelecekte olmalı",
   10: "Son tarih henüz gelmedi",
+  11: "Dilim oranları geçersiz (0 < kapora ≤ mesai ≤ %100)",
+  12: "Hakem; müşteri, ihaleci ya da çalışanlardan biri olamaz",
+  13: "Kod hash'leri eksik",
+  14: "Kod geçersiz: bu çalışan ve dilim için üretilmemiş",
+  15: "Geçersiz dilim",
+  16: "Bu dilim zaten ödendi",
 };
 
 export function friendlyError(e: unknown): string {
@@ -56,6 +85,7 @@ export function friendlyError(e: unknown): string {
   if (/trustline|TrustLine|trust line/i.test(msg)) return "Alıcı hesapta USDC trustline yok";
   if (/balance|insufficient|underfunded/i.test(msg)) return "Yetersiz USDC bakiyesi";
   if (/rejected|declined|cancel/i.test(msg)) return "İmza reddedildi";
+  if (/geolocation|User denied/i.test(msg)) return "Konum izni verilmedi";
   return msg.length > 220 ? msg.slice(0, 220) + "…" : msg;
 }
 
@@ -122,30 +152,72 @@ export async function listJobs(): Promise<Job[]> {
   return Promise.all(ids.map((id) => getJob(id)));
 }
 
+export const toE6 = (deg: number) => BigInt(Math.round(deg * 1e6));
+export const fromE6 = (v: bigint) => Number(v) / 1e6;
+
 export function createJob(
   signer: Signer,
-  p: { client: string; totalUsdc: string; stakeholders: { address: string; share_bps: number }[]; deadline: Date },
+  p: {
+    client: string;
+    arbiter: string;
+    totalUsdc: string;
+    shares: { address: string; share_bps: number }[];
+    deadline: Date;
+    arrivalPct: number;
+    midPct: number;
+    venue: { lat: number; lng: number; radiusM: number };
+  },
 ) {
-  return invoke<bigint>(signer, "create_job", {
+  const terms: JobTerms = {
     client: p.client,
-    contractor: signer.address,
+    arbiter: p.arbiter,
     token: USDC_SAC,
     total_amount: toUnits(p.totalUsdc),
-    stakeholders: p.stakeholders.map((s) => ({ ...s, accepted: false })),
+    shares: p.shares,
     deadline: BigInt(Math.floor(p.deadline.getTime() / 1000)),
-  });
+    arrival_bps: Math.round(p.arrivalPct * 100),
+    mid_bps: Math.round(p.midPct * 100),
+    venue_lat_e6: toE6(p.venue.lat),
+    venue_lng_e6: toE6(p.venue.lng),
+    radius_m: Math.round(p.venue.radiusM),
+  };
+  return invoke<bigint>(signer, "create_job", { contractor: signer.address, terms });
 }
 
 export const acceptJob = (signer: Signer, id: bigint) =>
   invoke<void>(signer, "accept_job", { job_id: id, worker: signer.address });
 
-export const depositJob = (signer: Signer, id: bigint) => invoke<void>(signer, "deposit", { job_id: id });
+export const depositJob = (signer: Signer, id: bigint, commitments: Buffer[]) =>
+  invoke<void>(signer, "deposit", { job_id: id, commitments });
+
+export const claimTranche = (signer: Signer, id: bigint, tranche: number, codeHex: string) =>
+  invoke<bigint>(signer, "claim", {
+    job_id: id,
+    worker: signer.address,
+    tranche,
+    code: Buffer.from(codeHex, "hex"),
+  });
+
+export const submitLocation = (signer: Signer, id: bigint, lat: number, lng: number) =>
+  invoke<void>(signer, "submit_location", { job_id: id, worker: signer.address, lat_e6: toE6(lat), lng_e6: toE6(lng) });
+
+export const arbiterRelease = (signer: Signer, id: bigint, worker: string, tranche: number) =>
+  invoke<bigint>(signer, "arbiter_release", { job_id: id, worker, tranche });
 
 export const completeJob = (signer: Signer, id: bigint) =>
   invoke<void>(signer, "complete_and_split", { job_id: id });
 
 export const releaseJob = (signer: Signer, id: bigint) =>
   invoke<void>(signer, "release_after_deadline", { job_id: id });
+
+/** Çalışanın payı (en küçük birim) */
+export const shareOf = (job: Job, s: Stakeholder) => (job.terms.total_amount * BigInt(s.share_bps)) / 10_000n;
+
+/** Dilimin kümülatif hedefi */
+export function trancheTarget(job: Job, s: Stakeholder, tranche: number) {
+  const bps = tranche === 0 ? job.terms.arrival_bps : tranche === 1 ? job.terms.mid_bps : 10_000;
+  return (shareOf(job, s) * BigInt(bps)) / 10_000n;
+}
 
 export function toUnits(amount: string): bigint {
   const [whole, frac = ""] = amount.trim().split(".");
