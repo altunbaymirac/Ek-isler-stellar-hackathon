@@ -16,7 +16,7 @@ karardır: ara adımlar kanıt toplar, ödeme tek seferde yapılır.
 |---|---|---|
 | **Kod 1** · varış | İhaleci sahada çalışana 12 karakterlik kodu (`K7M2-QX9F-4B3T`) **elden** verir. Çalışan uygulamasına yazar, zincire "geldi" yazılır. | ❌ |
 | **Kod 2** · yoklama | Çalışma saatlerinin **tam ortasında** ihaleciye tek bildirim gider ve **15 dakika** açık kalır: "çalışanlar iş yerinde ve çalışıyor mu?". İhaleci çalışmayanları işaretler; onlara anında bildirim düşer. | ❌ |
-| **Gün sonu QR** · ödeme | İş bitince ihaleci QR'ı gösterir, çalışan okutur, **payının tamamı** anında hesabına geçer. | ✅ |
+| **Gün sonu QR** · ödeme | İş bitince ihaleci QR'ı gösterir, çalışan **kamerayla** okutur, **payının tamamı** anında hesabına geçer. | ✅ |
 | **Konum** | Kod 1'den gün sonu ödemesine kadar çalışanın cihazında izlenir. Alandan çıkılırsa ihaleciye bildirim gider. | ❌ |
 
 **Kapora yoktur.** Çalışan gün içinde para görmez; karşılığında paranın escrow'da kilitli
@@ -78,6 +78,26 @@ Kod taahhütleri (sha256) zincirde herkese açıktır, yani kısa kod hash'ten g
 Parayı aktaran adımın en güçlü gize sahip olması bilinçlidir. 6 haneli sayı (10⁶ ihtimal)
 saniyeler içinde kırılır ve çalışan sahaya hiç gelmeden ödeme alabilirdi.
 
+### Kamera
+
+Gün sonu QR'ı parayı hareket ettiren tek adım olduğu için kamera akışı ayrı bir katmana
+çekildi (`frontend/src/lib/camera.ts`) ve çalışan burada takılıp kalmayacak şekilde kuruldu:
+
+- **İzin önceden istenir.** Çalışan şartları onaylarken bildirim, kamera ve konum izinleri
+  sırayla sorulur (`askFieldPermissions`). Sahada, ödeme anında izin penceresiyle uğraşılmaz.
+  Kamera bir an açılıp hemen kapatılır; üçü de reddedilse akış durmaz.
+- **Hata nedeni söylenir.** `denied` / `notfound` / `busy` / `insecure` / `unsupported`
+  ayrıştırılır ve her biri için ne yapılacağı yazılır. Eskiden hepsi tek bir "kameraya
+  erişilemedi" mesajıydı.
+- **Daha önce reddedilmişse** `getUserMedia` hiç çağrılmaz: tarayıcı sessizce hata verir,
+  çalışan da neden bir şey olmadığını anlamazdı. Yerine "tekrar dene" düğmesi çıkar.
+- **Elle yapıştırma yolu** her zaman açık. Eski kod "kodu aşağıya yapıştırabilirsin" diyordu
+  ama öyle bir alan yoktu; artık var ve ödemeyi gerçekten tamamlıyor.
+- Birden fazla kamera varsa ön/arka değiştirilebilir; tarama karesi 640 px'e küçültülür
+  (telefonda tam çözünürlükte jsQR gereksiz pahalı).
+- `onResult` bir ref'te tutuluyor. Liste 15 saniyede bir yenilendiği için eskiden kamera
+  her yenilemede kapanıp açılıyordu.
+
 ---
 
 ## 3. Doğrulama
@@ -119,7 +139,10 @@ Kod 1'in `✓ geldi` yazıp para ödememesi, gün sonu QR'ının payın tamamın
 - **İşletim sistemi bildirimleri**: otomatik tarayıcı izin vermedi. Uygulama içi uyarılar
   çalışıyor; bildirim kodu izin yoksa sessizce atlıyor.
 - **Gerçek GPS takibi**: konum izni yoktu, takip kendini kapattı (hata vermeden).
-- **Kamerayla QR okuma**: kamera yok. QR içeriğini üreten ve çözen kod yolu test edildi.
+- **Kameranın gerçekten açılması**: otomatik tarayıcı kamerayı engelliyor. *Reddedilme* yolu
+  uçtan uca doğrulandı: izin yok → doğru hata mesajı + "tekrar dene" + elle yapıştırma →
+  gerçek ödeme (İspanyolca tercüman 0.00 → **3.59 USDC**). Görüntüden QR okuma yolu (jsQR)
+  test edilemedi.
 
 Bu üçü gerçek bir telefonda doğrulanmalı.
 
@@ -155,6 +178,18 @@ set CARGO_TARGET_DIR=C:\temp\ekisler-target
 node --dns-result-order=ipv4first scripts/e2e.ts
 ```
 
+**Telefonda deneyecekseniz https şart.** Tarayıcılar kamerayı ve konumu yalnızca *güvenli
+kaynakta* açar: https ya da localhost. Telefondan `http://192.168.x.x:5173` açarsanız
+`navigator.mediaDevices` hiç tanımlı olmaz ve gün sonu QR'ı okutulamaz — uygulama bu durumu
+tanıyıp sebebini yazar ama kamera yine de açılmaz. Bunun için:
+
+```bash
+npm run dev:https
+```
+
+Kendinden imzalı sertifikayla açar (`@vitejs/plugin-basic-ssl`); telefonda bir kez "yine de
+devam et" demek gerekir. Bilgisayarda `npm run dev` yeterlidir, localhost zaten güvenlidir.
+
 ---
 
 ## 6. Bu dalda düzeltilen hata
@@ -172,7 +207,7 @@ yakalayamıyordu.
 ## 7. Yapılacaklar
 
 - [ ] README'deki testnet işlem tablosunu bugünkü gerçek hash'lerle güncelle
-- [ ] Bildirim, GPS ve kamera akışını gerçek telefonda dene
+- [ ] Bildirim, GPS ve kamera akışını gerçek telefonda dene (`npm run dev:https`)
 - [ ] `main` ile birleştir, kontratı yeniden deploy et, `VITE_CONTRACT_ID`'yi güncelle
 - [ ] Canlı demo URL'si (Vercel)
 - [ ] Yoklama kaçırılırsa zincire "yapılmadı" kaydı düşürmek (isteğe bağlı)

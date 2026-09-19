@@ -137,6 +137,7 @@ stateDiagram-v2
 | [`vendor/trustless-work`](vendor/trustless-work) | Trustless Work multi-release escrow wasm'ı (kaynak ve commit bilgisi `SOURCE.txt`'de) |
 | [`frontend/src/lib/contract.ts`](frontend/src/lib/contract.ts) | Kontrat istemcisi (`@stellar/stellar-sdk` `contract.Client`, spec zincirden okunur) |
 | [`frontend/src/lib/codes.ts`](frontend/src/lib/codes.ts) | Saha kodları: üretim, sha256 taahhüdü, QR formatı, mesafe hesabı |
+| [`frontend/src/lib/camera.ts`](frontend/src/lib/camera.ts) | Kamera izni ve görüntü akışı: önceden izin isteme, hata nedenini ayrıştırma, kamera seçimi |
 | [`frontend/src/lib/anchor.ts`](frontend/src/lib/anchor.ts) | SEP-1, SEP-10, SEP-12, SEP-38, SEP-6 istemcisi |
 | [`frontend/src/lib/wallet.ts`](frontend/src/lib/wallet.ts) | Stellar Wallets Kit entegrasyonu + demo hesapları |
 | [`frontend/scripts/e2e.ts`](frontend/scripts/e2e.ts) | Tarayıcısız uçtan uca testnet senaryosu |
@@ -206,11 +207,16 @@ cargo test
 cd frontend
 npm install
 npm run dev          # http://localhost:5173
+npm run dev:https    # telefondan denemek için: https://<yerel-ip>:5173
 
 # Tarayıcısız uçtan uca testnet senaryoları (yeni hesaplar açar)
 node scripts/e2e.ts
 node scripts/e2e-dispute.ts
 ```
+
+> Kamera ve konum yalnızca **güvenli kaynakta** (https ya da localhost) açılır. Telefondan
+> `http://<yerel-ip>:5173` açarsanız gün sonu QR'ı okutulamaz; `npm run dev:https` kullanın
+> ve sertifika uyarısında "yine de devam et" deyin.
 
 Kendi kontratını deploy etmek istersen:
 

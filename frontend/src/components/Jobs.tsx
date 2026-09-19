@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { twViewer } from "../lib/config.ts";
 import { useApp } from "../app-context.tsx";
+import { cameraMessage, cameraSupport, requestCameraAccess } from "../lib/camera.ts";
 import {
   CODE_ARRIVAL,
   CODE_FINAL,
@@ -146,13 +147,18 @@ const hhmm = (ts: bigint) => new Date(Number(ts) * 1000).toLocaleTimeString("tr-
 const lastAlert = (job: Job, worker: string, kind: number) =>
   [...job.alerts].reverse().find((a) => a.worker === worker && a.kind === kind);
 
-/** Onay adımında konum ve bildirim izinlerini önceden ister; reddedilse de akışı engellemez. */
+/**
+ * Onay adımında bildirim, kamera ve konum izinlerini önceden ister; hiçbiri reddedilse de
+ * akışı engellemez. Üçü de sahada lazım: bildirim Kod 2 uyarısı için, kamera gün sonu QR'ı
+ * için, konum ihaleci Kod 1'i vermezse kanıt için. İzin penceresi sahada değil, şimdi açılsın.
+ */
 async function askFieldPermissions() {
   try {
     if (typeof Notification !== "undefined" && Notification.permission === "default") await Notification.requestPermission();
   } catch {
     /* tarayıcı bildirim desteklemiyor */
   }
+  await requestCameraAccess(); // kendi hatasını yutar, durum döner
   await new Promise<void>((resolve) =>
     navigator.geolocation.getCurrentPosition(
       () => resolve(),
@@ -338,9 +344,10 @@ function JobCard({ job, onChange }: { job: Job; onChange: () => Promise<void> })
         {signer && job.status === JobStatus.PendingApproval && myStake && !myStake.accepted && (
           <>
             <div className="callout small">
-              Onaylayınca tarayıcı <b>konum</b> ve <b>bildirim</b> izni isteyecek. Konumun yalnızca kendi cihazında işlenir; zincire
-              sadece etkinlik noktasına uzaklığın yazılır, ham koordinatın hiçbir yere gönderilmez. Takip Kod 1'i girdiğin anda
-              başlar, gün sonu ödemesiyle biter ve istediğin an durdurabilirsin.
+              Onaylayınca tarayıcı <b>bildirim</b>, <b>kamera</b> ve <b>konum</b> izni isteyecek. Kamera yalnızca gün sonu QR'ını
+              okuturken açılır; görüntü cihazından çıkmaz, hiçbir yere kaydedilmez. Konumun da yalnızca kendi cihazında işlenir;
+              zincire sadece etkinlik noktasına uzaklığın yazılır, ham koordinatın hiçbir yere gönderilmez. Takip Kod 1'i girdiğin
+              anda başlar, gün sonu ödemesiyle biter ve istediğin an durdurabilirsin.
             </div>
             <AsyncButton
               className="btn ok"
@@ -733,6 +740,7 @@ function WorkerPanel({
   const [pos, setPos] = useState<{ lat: number; lng: number; acc?: number } | null>(null);
   const [processing, setProcessing] = useState<string | null>(null);
   const idx = job.stakeholders.findIndex((s) => s.address === me.address);
+  const camSupport = cameraSupport(); // https/localhost değilse kamera hiç açılmaz, önceden söyle
   const demoCodes = loadCodes(job.id); // yalnızca aynı tarayıcıda ihaleci rolü de oynanıyorsa (demo)
   const myProofs = job.locations.filter((l) => l.worker === me.address);
   const absent = lastAlert(job, me.address, ALERT_REPORTED_ABSENT);
@@ -827,6 +835,11 @@ function WorkerPanel({
           <div className="small muted">
             İşe geldiğin zincire yazıldı. İş bitince ihaleci gün sonu QR'ını gösterecek; okuttuğun anda payının tamamı hesabına geçer.
           </div>
+          {camSupport !== "ok" && (
+            <div className="callout warn small">
+              ⚠️ {cameraMessage(camSupport)} QR metnini okutma penceresinden elle yapıştırabilirsin.
+            </div>
+          )}
           <div className="row">
             <button className="btn" disabled={!!processing} onClick={() => setScanning(true)}>
               📷 Gün sonu QR'ını okut
