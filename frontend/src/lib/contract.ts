@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import { contract } from "@stellar/stellar-sdk";
+import { codeBytes } from "./codes.ts";
 import { CONTRACT_ID, NETWORK_PASSPHRASE, RPC_URL, USDC_DECIMALS, USDC_SAC } from "./config.ts";
 import { L } from "./i18n.ts";
 import type { Signer } from "./signer.ts";
@@ -37,12 +38,14 @@ export const statusLabel = (s: number) => L(STATUS_LABEL[s], STATUS_EN[s]);
 export interface Stakeholder {
   address: string;
   share_bps: number;
-  accepted: boolean;
+  accepted: boolean; // çalışanın mutabakat onayı
+  arrived: boolean; // Kod 1 girildi ya da hakem işaretledi — para hareket etmez
+  checks: number; // Kod 2 yoklaması kaç kez yapıldı (para hareket etmez)
+  released: boolean; // payı Trustless Work'ten ödendi
+  disputed: boolean; // payı hakeme (Trustless Work dispute) devredildi
   paid: bigint;
-  released: number; // dilim bit maskesi
-  disputed: number; // hakeme (Trustless Work dispute) devredilen dilimler
-  escrow: string; // bu paydaşın Trustless Work escrow'u (milestone i = dilim i)
-  amounts: bigint[]; // dilim (milestone) tutarları
+  milestone: number; // Trustless Work escrow'undaki milestone indeksi
+  amount: bigint; // milestone tutarı
 }
 
 export interface LocationProof {
@@ -52,7 +55,7 @@ export interface LocationProof {
   timestamp: bigint;
 }
 
-/** 1: Kod 2'de işveren "burada değil" dedi · 2: çalışan etkinlik alanından çıktı */
+/** 1: Kod 2'de ihaleci "burada değil" dedi · 2: çalışan etkinlik alanından çıktı */
 export interface Alert {
   worker: string;
   kind: number;
@@ -69,8 +72,9 @@ export interface JobTerms {
   total_amount: bigint;
   shares: { address: string; share_bps: number }[];
   deadline: bigint;
-  arrival_bps: number;
-  mid_bps: number;
+  /** Çalışma saatleri. Kod 2 yoklaması bu aralığın tam ortasında açılır. */
+  work_start: bigint;
+  work_end: bigint;
   venue_lat_e6: bigint;
   venue_lng_e6: bigint;
   radius_m: number;
@@ -82,6 +86,7 @@ export interface Job {
   terms: JobTerms;
   stakeholders: Stakeholder[];
   status: number;
+  escrow: string; // Trustless Work multi-release escrow kontratı
   commitments: Buffer[];
   locations: LocationProof[];
   alerts: Alert[];
@@ -99,13 +104,16 @@ const ERRORS: Record<number, [string, string]> = {
   8: ["Aynı adres iki kez eklenmiş", "The same address was added twice"],
   9: ["Son tarih gelecekte olmalı", "Deadline must be in the future"],
   10: ["Son tarih henüz gelmedi", "The deadline has not passed yet"],
-  11: ["Dilim oranları geçersiz (0 < kapora < mesai < %100)", "Invalid tranche split (0 < deposit < mid-shift < 100%)"],
+  11: ["Bu çalışan zaten gelmiş olarak işaretlendi", "This worker is already marked as arrived"],
   12: ["Hakem; müşteri, ihaleci ya da çalışanlardan biri olamaz", "The arbiter cannot be the employer, contractor or a worker"],
-  13: ["Kod hash'leri eksik", "Code commitments are missing"],
-  14: ["Kod geçersiz: bu çalışan ve dilim için üretilmemiş", "Invalid code: not issued for this worker and step"],
-  15: ["Geçersiz dilim", "Invalid step"],
-  16: ["Bu dilim zaten ödendi", "This step was already paid"],
-  17: ["Bir işte en fazla 5 paydaş olabilir (ihaleci + 4 çalışan)", "A job can have at most 5 stakeholders (contractor + 4 workers)"],
+  13: ["Kod hash'leri eksik: her çalışan için Kod 1 ve gün sonu QR'ı gerekli", "Code commitments missing: every worker needs Code 1 and an end-of-day QR"],
+  14: ["Kod geçersiz: bu çalışan için üretilmemiş", "Invalid code: not issued for this worker"],
+  15: ["Geçersiz kod türü", "Invalid code type"],
+  16: ["Bu payın ödemesi zaten yapıldı", "This share was already paid"],
+  17: ["Çok fazla çalışan: Trustless Work escrow'u en fazla 50 milestone alır", "Too many workers: a Trustless Work escrow takes at most 50 milestones"],
+  18: ["İhaleci henüz saha kodlarını oluşturmadı", "The contractor hasn't created the on-site codes yet"],
+  19: ["Kod 2 yoklama penceresi açık değil (çalışma saatlerinin ortasında 15 dakika açılır)", "The Code 2 roll-call window isn't open (it opens for 15 minutes in the middle of working hours)"],
+  20: ["Çalışma saatleri geçersiz: başlangıç < bitiş olmalı ve bitiş son tarihi geçmemeli", "Invalid working hours: start must be before end, and end can't be after the deadline"],
 };
 
 export function friendlyError(e: unknown): string {
@@ -166,8 +174,7 @@ async function invoke<T>(signer: Signer, method: string, args: object): Promise<
   const hash = sent.sendTransactionResponse?.hash ?? sent.getTransactionResponse?.txHash;
   const status = sent.getTransactionResponse?.status;
   if (status && status !== "SUCCESS") {
-    const diag = (sent.getTransactionResponse as { diagnosticEventsXdr?: unknown[] } | undefined)?.diagnosticEventsXdr;
-    throw new Error(`${L("İşlem ağda başarısız oldu", "Transaction failed on the network")} (${status})${hash ? ` · tx ${hash}` : ""}${diag ? ` · ${diag.length} diag` : ""}`);
+    throw new Error(`${L("İşlem ağda başarısız oldu", "Transaction failed on the network")} (${status})${hash ? ` · tx ${hash}` : ""}`);
   }
   return { result: unwrap<T>(sent.result), hash };
 }
@@ -201,8 +208,8 @@ export function createJob(
     totalUsdc: string;
     shares: { address: string; share_bps: number }[];
     deadline: Date;
-    arrivalPct: number;
-    midPct: number;
+    workStart: Date;
+    workEnd: Date;
     venue: { lat: number; lng: number; radiusM: number };
   },
 ) {
@@ -213,8 +220,8 @@ export function createJob(
     total_amount: toUnits(p.totalUsdc),
     shares: p.shares,
     deadline: BigInt(Math.floor(p.deadline.getTime() / 1000)),
-    arrival_bps: Math.round(p.arrivalPct * 100),
-    mid_bps: Math.round(p.midPct * 100),
+    work_start: BigInt(Math.floor(p.workStart.getTime() / 1000)),
+    work_end: BigInt(Math.floor(p.workEnd.getTime() / 1000)),
     venue_lat_e6: toE6(p.venue.lat),
     venue_lng_e6: toE6(p.venue.lng),
     radius_m: Math.round(p.venue.radiusM),
@@ -225,27 +232,57 @@ export function createJob(
 export const acceptJob = (signer: Signer, id: bigint) =>
   invoke<void>(signer, "accept_job", { job_id: id, worker: signer.address });
 
-export const depositJob = (signer: Signer, id: bigint, commitments: Buffer[]) =>
-  invoke<void>(signer, "deposit", { job_id: id, commitments });
+/** İşveren parayı Trustless Work escrow'una kilitler. Saha kodları işverende değil ihalecidedir. */
+export const depositJob = (signer: Signer, id: bigint) => invoke<void>(signer, "deposit", { job_id: id });
 
-export const claimTranche = (signer: Signer, id: bigint, tranche: number, codeHex: string) =>
-  invoke<bigint>(signer, "claim", {
-    job_id: id,
-    worker: signer.address,
-    tranche,
-    code: Buffer.from(codeHex, "hex"),
-  });
+/** İhaleci saha kodlarının sha256 taahhütlerini zincire yazar; kodların kendisi cihazında kalır. */
+export const setCodes = (signer: Signer, id: bigint, commitments: Buffer[]) =>
+  invoke<void>(signer, "set_codes", { job_id: id, commitments });
+
+/** Kod 1 · varış: ihalecinin elden verdiği 12 karakterlik kod. Para hareket etmez, "geldim" kanıtıdır. */
+export const checkIn = (signer: Signer, id: bigint, code: string) =>
+  invoke<void>(signer, "check_in", { job_id: id, worker: signer.address, code: codeBytes(code) });
+
+/** Gün sonu QR'ı: payın tamamı anında ödenir. */
+export const claimPayment = (signer: Signer, id: bigint, secret: string) =>
+  invoke<bigint>(signer, "claim", { job_id: id, worker: signer.address, code: codeBytes(secret) });
 
 /** Zincire yalnızca mesafe ve ham ölçümün hash'i gider; ham ölçüm (tuzla) çalışanın cihazında saklanır. */
 export const submitLocation = (signer: Signer, id: bigint, distanceM: number, readingHash: Buffer) =>
   invoke<void>(signer, "submit_location", { job_id: id, worker: signer.address, distance_m: distanceM, reading_hash: readingHash });
 
-/** Kod 2: işveren çalışanın hâlâ iş yerinde olup olmadığını onaylar (evet → mesai dilimi ödenir) */
+/**
+ * Kod 2 · devam kontrolü: ihaleci çalışanın hâlâ iş yerinde olup olmadığını bildirir.
+ * Para hareket etmez; bu yalnızca yoklamadır ve gün boyunca tekrarlanabilir.
+ */
 export const confirmPresence = (signer: Signer, id: bigint, worker: string, present: boolean) =>
-  invoke<bigint>(signer, "confirm_presence", { job_id: id, worker, present });
+  invoke<void>(signer, "confirm_presence", { job_id: id, worker, present });
 
-export const arbiterRelease = (signer: Signer, id: bigint, worker: string, tranche: number) =>
-  invoke<bigint>(signer, "arbiter_release", { job_id: id, worker, tranche });
+/**
+ * Kod 2 · toplu yoklama: ihaleciye giden tek bildirimin yanıtı.
+ * `absent` listesindekilere "ihaleci çalışmadığını söylüyor" bildirimi gider, kalanlar çalışıyor sayılır.
+ */
+export const confirmPresenceAll = (signer: Signer, id: bigint, absent: string[]) =>
+  invoke<void>(signer, "confirm_presence_all", { job_id: id, absent });
+
+/** Kontrattaki PRESENCE_WINDOW_SECS ile aynı: yoklama 15 dakika açık kalır. */
+export const PRESENCE_WINDOW_SECS = 15 * 60;
+
+/** Kod 2 penceresi (kontrattaki `presence_window` ile birebir aynı hesap), ms cinsinden. */
+export function presenceWindow(job: Job) {
+  const start = Number(job.terms.work_start);
+  const end = Number(job.terms.work_end);
+  const mid = start + Math.floor((end - start) / 2);
+  return { from: mid * 1000, to: (mid + PRESENCE_WINDOW_SECS) * 1000 };
+}
+
+/** Hakem: konum kanıtına bakıp çalışanı "geldi" işaretler. Ödeme değildir; son tarih ödemesine dahil eder. */
+export const arbiterConfirmArrival = (signer: Signer, id: bigint, worker: string) =>
+  invoke<void>(signer, "arbiter_confirm_arrival", { job_id: id, worker });
+
+/** Hakem: çalışanın payını son tarihi beklemeden serbest bıraktırır. */
+export const arbiterRelease = (signer: Signer, id: bigint, worker: string) =>
+  invoke<bigint>(signer, "arbiter_release", { job_id: id, worker });
 
 /**
  * Kapanış Trustless Work milestone'larını parça parça işler (her işlem en fazla 3 milestone):
@@ -318,8 +355,8 @@ export function twFeeAddress() {
 }
 
 /** Hakem: Trustless Work'te dispute'taki milestone'u çözer ve tutarı işverene iade eder */
-export async function resolveToClient(signer: Signer, job: Job, escrow: string, milestoneIndex: number, amount: bigint) {
-  const c = await twClient(escrow, signer);
+export async function resolveToClient(signer: Signer, job: Job, milestoneIndex: number, amount: bigint) {
+  const c = await twClient(job.escrow, signer);
   const tx = await c.resolve_milestone_dispute({
     dispute_resolver: signer.address,
     milestone_index: milestoneIndex,
@@ -336,11 +373,7 @@ export const netOfTwFee = (gross: bigint) => gross - (gross * 30n) / 10_000n;
 /** Çalışanın payı (en küçük birim) */
 export const shareOf = (job: Job, s: Stakeholder) => (job.terms.total_amount * BigInt(s.share_bps)) / 10_000n;
 
-/** Dilimin kümülatif hedefi */
-export function trancheTarget(job: Job, s: Stakeholder, tranche: number) {
-  const bps = tranche === 0 ? job.terms.arrival_bps : tranche === 1 ? job.terms.mid_bps : 10_000;
-  return (shareOf(job, s) * BigInt(bps)) / 10_000n;
-}
+
 
 export function toUnits(amount: string): bigint {
   const [whole, frac = ""] = amount.trim().split(".");

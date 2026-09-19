@@ -149,7 +149,7 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
           <div className="row">
             <span className="small muted">
               {scanning
-                ? L("QR aranıyor… işverenin ekranındaki kodu çerçeveye al.", "Looking for a QR… fit the code on the employer's screen in the frame.")
+                ? L("QR aranıyor… ihalecinin ekranındaki kodu çerçeveye al.", "Looking for a QR… fit the code on the contractor's screen in the frame.")
                 : L("Tarayıcı kamera izni isteyecek.", "Your browser will ask for camera permission.")}
             </span>
             <div className="spacer" />

@@ -6,7 +6,7 @@
  */
 import { Keypair } from "@stellar/stellar-sdk";
 import * as anchor from "../src/lib/anchor.ts";
-import { makeCodes } from "../src/lib/codes.ts";
+import { CODE_ARRIVAL, CODES, makeCodes } from "../src/lib/codes.ts";
 import * as c from "../src/lib/contract.ts";
 import { ensureReady, getBalances } from "../src/lib/horizon.ts";
 import { keypairSigner } from "../src/lib/signer.ts";
@@ -35,18 +35,19 @@ const created = await c.createJob(contractor, {
     { address: w2.address, share_bps: 2000 },
   ],
   deadline: new Date(Date.now() + 75_000),
-  arrivalPct: 20,
-  midPct: 50,
+  workStart: new Date(Date.now() - 30_000),
+  workEnd: new Date(Date.now() + 30_000),
   venue: { lat: 41.0339, lng: 28.9772, radiusM: 300 },
 });
 const id = created.result;
 await c.acceptJob(w1, id);
 await c.acceptJob(w2, id);
 const { codes, commitments } = await makeCodes(3);
-await c.depositJob(client, id, commitments);
-const escrowId = (await c.getJob(id)).stakeholders[2].escrow; // gelmeyecek w2'nin escrow'u
+await c.depositJob(client, id);
+await c.setCodes(contractor, id, commitments);
+const escrowId = (await c.getJob(id)).escrow;
 log(`iş #${id} fonlandı · escrow https://viewer.trustlesswork.com/testnet/v1/${escrowId}`);
-log("w1 varış QR", (await c.claimTranche(w1, id, 0, codes[3])).hash);
+log("w1 Kod 1 · varış (para hareket etmez)", (await c.checkIn(w1, id, codes[1 * CODES + CODE_ARRIVAL])).hash);
 
 const job0 = await c.getJob(id);
 const wait = Number(job0.terms.deadline) * 1000 - Date.now() + 8_000;
@@ -61,7 +62,7 @@ const open = escrow.milestones.map((m, i) => ({ m, i })).filter(({ m }) => m.fla
 log("dispute'taki milestone'lar:", open.map(({ m, i }) => `#${i} ${m.description} ${c.fromUnits(m.amount)}`).join(", "));
 
 const before = Number((await getBalances(client.address)).usdc);
-for (const { m, i } of open) log(`hakem #${i} → işverene iade`, (await c.resolveToClient(arbiter, job, escrowId, i, m.amount)).hash);
+for (const { m, i } of open) log(`hakem #${i} → işverene iade`, (await c.resolveToClient(arbiter, job, i, m.amount)).hash);
 const after = Number((await getBalances(client.address)).usdc);
 log(`İşverene iade: +${(after - before).toFixed(4)} USDC`);
 for (const s of [contractor, w1, w2]) log(s.label, (await getBalances(s.address)).usdc);

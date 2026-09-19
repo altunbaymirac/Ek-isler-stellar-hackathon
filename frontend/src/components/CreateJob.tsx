@@ -1,11 +1,11 @@
 import { StrKey } from "@stellar/stellar-sdk";
-import { X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useApp } from "../app-context.tsx";
 import { createJob, friendlyError } from "../lib/contract.ts";
 import { ensureReady } from "../lib/horizon.ts";
 import { L, locale } from "../lib/i18n.ts";
-import { DEMO_ROLES, roleText } from "../lib/wallet.ts";
+import { allRoles, roleText } from "../lib/wallet.ts";
 import { AsyncButton, useToast } from "./ui.tsx";
 
 interface Row {
@@ -13,6 +13,14 @@ interface Row {
   custom: string;
   percent: string;
 }
+
+/** Çalışma süresi hazır seçenekleri (dakika). Kod 2 yoklaması sürenin tam ortasında açılır. */
+const WORK_PRESETS = (): [string, number][] => [
+  [L("2 dk (demo)", "2 min (demo)"), 2],
+  [L("4 saat", "4 hours"), 240],
+  [L("8 saat", "8 hours"), 480],
+  [L("12 saat", "12 hours"), 720],
+];
 
 const DEADLINE_PRESETS = (): [string, number][] => [
   [L("3 dk (demo)", "3 min (demo)"), 3 * 60],
@@ -40,17 +48,17 @@ export function CreateJob() {
   ]);
   const [contractorPct, setContractorPct] = useState("40");
   const [deadline, setDeadline] = useState(() => toLocalInput(new Date(Date.now() + 24 * 3600 * 1000)));
+  const [workStart, setWorkStart] = useState(() => toLocalInput(new Date()));
+  const [workEnd, setWorkEnd] = useState(() => toLocalInput(new Date(Date.now() + 8 * 3600 * 1000)));
   const [arbiterWho, setArbiterWho] = useState("arbiter");
   const [arbiterCustom, setArbiterCustom] = useState("");
-  const [arrivalPct, setArrivalPct] = useState("20");
-  const [midPct, setMidPct] = useState("50");
   const [venue, setVenue] = useState({ lat: "41.033900", lng: "28.977200", radius: "300" });
 
   const resolve = (who: string, custom: string) =>
     who === "custom" ? custom.trim() : who === "wallet" ? (wallet?.address ?? "") : (demo[who]?.address ?? "");
 
   const options = [
-    ...DEMO_ROLES.map((r) => ({ key: r.key, label: roleText(r).label })),
+    ...allRoles().map((r) => ({ key: r.key, label: roleText(r).label })),
     ...(wallet ? [{ key: "wallet", label: L("Cüzdanım", "My wallet") }] : []),
     { key: "custom", label: L("Başka adres…", "Other address…") },
   ];
@@ -63,7 +71,6 @@ export function CreateJob() {
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signer, rows, contractorPct, demo, wallet]);
-
 
   const totalPct = stakeholders.reduce((a, s) => a + (Number.isFinite(s.percent) ? s.percent : 0), 0);
   const clientAddr = resolve(clientWho, clientCustom);
@@ -78,13 +85,19 @@ export function CreateJob() {
   if (stakeholders.some((s) => !(s.percent > 0))) problems.push(L("Her pay 0'dan büyük olmalı", "Every share must be greater than 0"));
   if (stakeholders.some((s) => !StrKey.isValidEd25519PublicKey(s.address))) problems.push(L("Geçersiz çalışan adresi var", "There is an invalid worker address"));
   if (new Set(stakeholders.map((s) => s.address)).size !== stakeholders.length) problems.push(L("Aynı kişi iki kez eklenmiş", "The same person was added twice"));
-  if (stakeholders.length > 5) problems.push(L("Bir işte en fazla 5 paydaş olabilir (ihaleci + 4 çalışan)", "At most 5 stakeholders per job (contractor + 4 workers)"));
   if (new Date(deadline).getTime() <= Date.now()) problems.push(L("Son tarih gelecekte olmalı", "The deadline must be in the future"));
+  const wsMs = new Date(workStart).getTime();
+  const weMs = new Date(workEnd).getTime();
+  if (!(weMs > wsMs)) problems.push(L("Çalışma bitişi başlangıçtan sonra olmalı", "The shift must end after it starts"));
+  else if (weMs <= Date.now()) problems.push(L("Çalışma bitişi gelecekte olmalı", "The shift end must be in the future"));
+  else if (weMs > new Date(deadline).getTime()) problems.push(L("Çalışma bitişi son tarihi geçemez", "The shift can't end after the deadline"));
+  // Kontrattaki presence_window ile birebir aynı hesap (saniye cinsinden tam ortası)
+  const wsSec = Math.floor(wsMs / 1000);
+  const weSec = Math.floor(weMs / 1000);
+  const kod2At = weMs > wsMs ? new Date((wsSec + Math.floor((weSec - wsSec) / 2)) * 1000) : null;
   if (!StrKey.isValidEd25519PublicKey(arbiterAddr)) problems.push(L("Hakem adresi geçersiz", "Invalid arbiter address"));
   else if (arbiterAddr === clientAddr || arbiterAddr === signer?.address || stakeholders.some((s) => s.address === arbiterAddr))
     problems.push(L("Hakem; işveren, ihaleci ya da çalışanlardan biri olamaz", "The arbiter can't be the employer, contractor or a worker"));
-  if (!(Number(arrivalPct) > 0 && Number(arrivalPct) < Number(midPct) && Number(midPct) < 100))
-    problems.push(L("Dilimler geçersiz: 0 < kapora < mesai < %100 (her dilim ayrı Trustless Work milestone'u)", "Invalid steps: 0 < deposit < mid-shift < 100% (each step is its own Trustless Work milestone)"));
   if (!Number.isFinite(Number(venue.lat)) || !Number.isFinite(Number(venue.lng)) || !(Number(venue.radius) > 0))
     problems.push(L("Etkinlik konumu geçersiz", "Invalid venue location"));
 
@@ -98,8 +111,8 @@ export function CreateJob() {
         totalUsdc: amount,
         shares: stakeholders.map((s) => ({ address: s.address, share_bps: Math.round(s.percent * 100) })),
         deadline: new Date(deadline),
-        arrivalPct: Number(arrivalPct),
-        midPct: Number(midPct),
+        workStart: new Date(workStart),
+        workEnd: new Date(workEnd),
         venue: { lat: Number(venue.lat), lng: Number(venue.lng), radiusM: Number(venue.radius) },
       });
       toast("ok", L(`İş #${result} oluşturuldu. Çalışanların onayı bekleniyor.`, `Job #${result} created. Waiting for the workers to accept.`), hash);
@@ -117,8 +130,8 @@ export function CreateJob() {
           <h2>{L("Yeni iş tanımla", "Define a new job")}</h2>
           <p className="muted small" style={{ margin: 0 }}>
             {L(
-              "İhaleci olarak işi ve payları zincire yazarsın. Her çalışan kendi payını onaylamadan işveren para yatıramaz. Çalışan sahada işverenin QR kodlarını okuttukça ödemesini alır.",
-              "As the contractor you write the job and the shares on-chain. The employer can't fund it until every worker has accepted their share. Workers get paid as they scan the employer's QR codes on site.",
+              "İhaleci olarak işi ve payları zincire yazarsın. Her çalışan kendi payını onaylamadan işveren para yatıramaz. Para kilitlendikten sonra saha kodlarını sen oluşturur, Kod 1'i sahada elden verir, gün sonu QR'ını iş bitince okutursun.",
+              "As the contractor you write the job and the shares on-chain. The employer can't fund it until every worker has accepted their share. Once the money is locked you create the on-site codes, hand out Code 1 in person, and show the end-of-day QR when the job is done.",
             )}
           </p>
         </div>
@@ -162,24 +175,55 @@ export function CreateJob() {
           </span>
           <span className="small muted" style={{ fontWeight: 400 }}>
             {L(
-              "İşveren bu tarihe kadar işi kapatmazsa: işe gelen çalışanlar kalan paylarını alır, hiç gelmeyenlerin payı işverene döner.",
-              "If the employer hasn't closed the job by then, workers who showed up get the rest of their share and no-shows' shares go back to the employer.",
+              "İşveren bu tarihe kadar işi kapatmazsa: işe gelen çalışanlar paylarını alır, hiç gelmeyenlerin payı işverene döner.",
+              "If the employer hasn't closed the job by then, workers who showed up get their shares and no-shows' shares go back to the employer.",
             )}
           </span>
         </label>
 
         <div className="field">
-          {L("Saha ödeme dilimleri (her çalışanın payı üzerinden, kümülatif)", "On-site payment steps (of each worker's share, cumulative)")}
-          <span className="row" style={{ gap: 8, fontWeight: 400 }}>
-            <span className="row" style={{ gap: 4 }}>
-              {L("Kod 1 · varış (kapora) %", "Code 1 · arrival (deposit) %")}
-              <input style={{ width: 64 }} inputMode="decimal" value={arrivalPct} onChange={(e) => setArrivalPct(e.target.value.replace(",", "."))} />
+          {L("Çalışma saatleri", "Working hours")}
+          <span className="row" style={{ gap: 6, fontWeight: 400 }}>
+            <input type="datetime-local" value={workStart} onChange={(e) => setWorkStart(e.target.value)} aria-label={L("Çalışma başlangıcı", "Shift start")} />
+            <span className="muted">→</span>
+            <input type="datetime-local" value={workEnd} onChange={(e) => setWorkEnd(e.target.value)} aria-label={L("Çalışma bitişi", "Shift end")} />
+          </span>
+          <span className="row" style={{ gap: 6 }}>
+            {WORK_PRESETS().map(([l, mins]) => (
+              <button
+                key={l}
+                type="button"
+                className="btn secondary sm"
+                onClick={() => {
+                  const now = Date.now();
+                  setWorkStart(toLocalInput(new Date(now)));
+                  setWorkEnd(toLocalInput(new Date(now + mins * 60_000)));
+                }}
+              >
+                {l}
+              </button>
+            ))}
+          </span>
+          {kod2At && (
+            <span className="small muted row" style={{ fontWeight: 400, gap: 6, flexWrap: "nowrap", alignItems: "flex-start" }}>
+              <Bell size={14} style={{ flex: "none", marginTop: 2 }} />
+              <span>
+                {L(
+                  `Kod 2 yoklaması çalışma süresinin tam ortasında, ${kod2At.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })} itibarıyla sana bildirim olarak gelecek ve 15 dakika açık kalacak. Bu süre zincirde yazılı; dışında yoklama yapılamaz.`,
+                  `The Code 2 roll call will reach you in the middle of the shift, at ${kod2At.toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}, and stay open for 15 minutes. The window is enforced on-chain; no roll call is possible outside it.`,
+                )}
+              </span>
             </span>
-            <span className="row" style={{ gap: 4 }}>
-              {L("Kod 2 · devam %", "Code 2 · still here %")}
-              <input style={{ width: 64 }} inputMode="decimal" value={midPct} onChange={(e) => setMidPct(e.target.value.replace(",", "."))} />
-            </span>
-            <span className="muted">{L("Gün sonu QR'ı %100", "End-of-day QR 100%")}</span>
+          )}
+        </div>
+
+        <div className="field">
+          {L("Saha akışı", "On-site flow")}
+          <span className="small muted" style={{ fontWeight: 400 }}>
+            {L(
+              "Kod 1 · çalışan gelince ona elden verdiğin kodu girer, zincire \"geldi\" yazılır. Kod 2 · çalışma süresinin ortasında sana bildirim gelir, çalışmayanları işaretlersin. Gün sonu QR'ı · iş bitince okuttuğun QR, çalışanın payının tamamını öder. İlk iki adım para hareket ettirmez.",
+              "Code 1 · when a worker arrives they type the code you give them and \"arrived\" goes on-chain. Code 2 · in the middle of the shift you get a notification and mark anyone not working. End-of-day QR · the QR you show when the job is done pays the worker's full share. The first two steps move no money.",
+            )}
           </span>
         </div>
 
@@ -233,7 +277,9 @@ export function CreateJob() {
 
         <div className="stake-list">
           <div className="stake me">
-            <div style={{ fontWeight: 600 }}>{signer ? nameOf(signer.address) : "—"} · {L("ihaleci", "contractor")}</div>
+            <div style={{ fontWeight: 600 }}>
+              {signer ? nameOf(signer.address) : "—"} · {L("ihaleci", "contractor")}
+            </div>
             <div className="row" style={{ gap: 4 }}>
               %<input style={{ width: 70 }} inputMode="decimal" value={contractorPct} onChange={(e) => setContractorPct(e.target.value.replace(",", "."))} />
             </div>
@@ -242,11 +288,7 @@ export function CreateJob() {
           {rows.map((r, i) => (
             <div className="stake" key={i}>
               <div className="stack" style={{ gap: 6 }}>
-                <select
-                  value={r.who}
-                  onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, who: e.target.value } : x)))}
-                  aria-label={L("Çalışan", "Worker")}
-                >
+                <select value={r.who} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, who: e.target.value } : x)))} aria-label={L("Çalışan", "Worker")}>
                   {options.map((o) => (
                     <option key={o.key} value={o.key}>
                       {o.label}
@@ -254,11 +296,7 @@ export function CreateJob() {
                   ))}
                 </select>
                 {r.who === "custom" && (
-                  <input
-                    placeholder="G…"
-                    value={r.custom}
-                    onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, custom: e.target.value } : x)))}
-                  />
+                  <input placeholder="G…" value={r.custom} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, custom: e.target.value } : x)))} />
                 )}
               </div>
               <div className="row" style={{ gap: 4 }}>
